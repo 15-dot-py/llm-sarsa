@@ -51,6 +51,7 @@ body{background:var(--background);color:var(--ink)}
 .desk .metric-card,.desk .data-intro,.desk .signal-grid>div,.desk .ablation-grid>div,.desk .result-stats,.desk .library-banner{background:var(--surface);border-color:var(--line);box-shadow:none}
 .desk .metric-card strong,.desk .state-stats strong,.desk .signal-grid strong,.desk .ablation-grid strong,.desk .result-stats strong,.desk .before-after strong,.desk .parameter-grid strong,.desk .transition-list strong,.desk .library-banner h2{color:var(--ink)}
 .desk .metric-card span,.desk .metric-card small{color:var(--muted)}.desk .metric-card strong{font-family:'Bahnschrift','DengXian',sans-serif;font-size:29px}
+.desk .metric-value{color:var(--ink);font-family:'Bahnschrift','DengXian',sans-serif;font-size:29px}.desk .metric-label,.desk .metric-note{color:var(--muted)}
 .desk .role-index,.desk .component-index{background:var(--surface-raised);color:var(--muted)}
 .desk .panel-head h2,.desk .library-card h2,.desk .data-intro h2{color:var(--ink);font-size:16px}
 .desk .panel-head p,.desk .data-intro p,.desk .body-copy,.desk .simple-list,.desk .explanation-summary,.desk .watch-metrics,.desk .factor-summary p,.desk .role-list p,.desk .signal-grid span,.desk .evidence-quote,.desk .source-cell,.desk .form-footer p,.desk .library-card>p,.desk .library-banner p,.desk .ablation-grid p{color:var(--muted);font-size:12px}

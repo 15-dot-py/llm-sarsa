@@ -8,9 +8,9 @@ import { DataCenter, DecisionDetail, ExperimentView, FeedbackForm, HistoryView, 
 
 type Drawer = 'data' | 'company' | 'model' | 'history' | 'share' | null;
 const SCENARIOS = [
-  {name:'坚果大促与库存',profile:'inventory_clearance',question:'三只松鼠坚果大促前，库存较多，竞品正在降价。如何在毛利底线内调整渠道投入和促销？'},
-  {name:'渠道投入与获客',profile:'acquisition_efficiency',question:'三只松鼠电商场景中，抖音获客成本上升，流量下降。如何在每日预算内调整渠道投入？'},
-  {name:'老客与经营利润',profile:'profit_maximization',question:'三只松鼠老客回流较好，但促销成本偏高。怎样兼顾客户留存与营销贡献利润？'},
+  {name:'坚果大促与库存',profile:'inventory_clearance',question:'坚果大促前，库存较多，竞品正在降价。如何在毛利底线内调整渠道投入和促销？'},
+  {name:'渠道投入与获客',profile:'acquisition_efficiency',question:'电商场景中，抖音获客成本上升，流量下降。如何在每日预算内调整渠道投入？'},
+  {name:'老客与经营利润',profile:'profit_maximization',question:'老客回流较好，但促销成本偏高。怎样兼顾客户留存与营销贡献利润？'},
 ];
 const STATUS:Record<string,string>={draft:'等待执行确认',executed:'等待经营结果',awaiting_next:'等待下一动作',updated:'已完成学习',terminal:'周期已结束',cancelled:'已取消'};
 const REWARDS:Record<string,string>={profit_margin:'贡献利润率',roi:'营销 ROI',conversion_rate:'转化率',repeat_purchase_rate:'回流客户占比',inventory_turnover:'库存周转',gmv_growth:'收入增长',new_customer_ratio:'新客占比',cac:'获客成本',return_rate:'退货率',promotion_cost_ratio:'促销成本',inventory_pressure:'库存压力',volatility:'收入波动'};
@@ -61,11 +61,11 @@ export default function Workspace({initialPage='dashboard'}:{initialPage?:PageId
   const cancel=(d:Decision)=>run('取消草稿',async()=>{await post(`/decisions/${d.id}/cancel`);setRecord(null);await refresh();});
   const end=(d:Decision)=>run('结束周期',async()=>{if(!d.parent_decision)return;const previous=await post<Decision>(`/decisions/${d.parent_decision}/finish`);setRecord(previous);await refresh();setToast('周期已结束，没有虚构下一执行动作');});
   const newSession=()=>run('创建新演示会话',async()=>{const x=await post<{session_id:string}>('/session');localStorage.setItem('shenmou-session-v1',x.session_id);setRecord(null);setData(null);setLab(null);await refresh();setToast('新会话已创建，原会话记录保留');});
-  const drawerTitle=drawer==='data'?'运营数据库':drawer==='company'?'三只松鼠企业资料':drawer==='model'?'模型与验证':drawer==='history'?'决策记录':'手机访问';
+  const drawerTitle=drawer==='data'?'运营数据库':drawer==='company'?'企业资料':drawer==='model'?'模型与验证':drawer==='history'?'决策记录':'手机访问';
   const active=dashboard?.active_decision;
   return <div className="desk">
     <aside className={`desk-sidebar ${menu?'is-open':''}`}>
-      <a href="/" className="desk-brand" onClick={e=>{e.preventDefault();newDecision();}}><span className="desk-monogram">松</span><div><strong>三只松鼠</strong><span>深谋远虑 · 营销工作台</span></div></a>
+      <a href="/" className="desk-brand" onClick={e=>{e.preventDefault();newDecision();}}><span className="desk-logo-mark" aria-hidden="true"><svg viewBox="40 410 410 430"><image href="/brand-logo.png" width="1254" height="1254"/></svg></span><div><strong>深谋远虑</strong><span>营销决策工作台</span></div></a>
       <nav className="desk-nav" aria-label="工作区导航">
         <button className={!drawer?'selected':''} onClick={()=>{setDrawer(null);setMenu(false);}}><LayoutDashboard size={17}/>营销工作台</button>
         <button className={drawer==='data'?'selected':''} onClick={()=>open('data')}><Database size={17}/>运营数据库</button>
@@ -78,14 +78,14 @@ export default function Workspace({initialPage='dashboard'}:{initialPage?:PageId
       <div className="desk-sidebar-bottom"><button onClick={()=>open('share')}><Smartphone size={16}/>分享站点<ArrowUpRight size={14}/></button><div className="desk-local-status"><i className={dashboard?'connected':''}/>{dashboard?'服务已连接':'正在连接'}</div></div>
     </aside>
     {menu&&<button className="desk-mobile-backdrop" aria-label="收起导航" onClick={()=>setMenu(false)}/>}
-    <div className="desk-main"><header className="desk-header"><div><button className="desk-mobile-menu" aria-label="打开导航" onClick={()=>setMenu(!menu)}><Menu size={20}/></button><span className="desk-crumb">三只松鼠</span><span className="desk-crumb-divider">/</span><span>营销工作台</span></div><div className="desk-header-actions"><button onClick={()=>open('share')}><Smartphone size={15}/><span>手机访问</span></button></div></header>
+    <div className="desk-main"><header className="desk-header"><div><button className="desk-mobile-menu" aria-label="打开导航" onClick={()=>setMenu(!menu)}><Menu size={20}/></button><span className="desk-crumb">深谋远虑</span><span className="desk-crumb-divider">/</span><span>营销工作台</span></div><div className="desk-header-actions"><button onClick={()=>open('share')}><Smartphone size={15}/><span>手机访问</span></button></div></header>
       <main className="desk-content">
         {error&&<div className="error-banner" role="alert"><span>{error}</span><button aria-label="关闭错误" onClick={()=>setError('')}><X size={15}/></button></div>}
         {toast&&<div className="desk-toast" role="status"><Check size={15}/>{toast}</div>}
         {!dashboard?<div className="desk-loading"><LoaderCircle className="spinning" size={22}/><p>{error?'暂时无法读取，请检查服务。':'正在读取数据和嵌入模型…'}</p><button onClick={()=>run('重新读取',async()=>{await refresh();})}>重新读取</button></div>:<>
           <div className="desk-page-heading"><div><h1>营销工作台</h1><p>{dashboard.quality.source==='demo'?'合成演示数据':'用户上传数据'} · {dashboard.quality.days} 天 · {dashboard.quality.rows} 行</p></div><button className="button subtle" onClick={newDecision}><Plus size={15}/>新建决策</button></div>
           <div className="desk-metrics">{[['营销 ROI',number(dashboard.metrics.roi)],['广告获客成本',yuan(dashboard.metrics.cac)],['分仓库存',`${number(dashboard.metrics.inventory_level,0)} 件`],['营销贡献利润',yuan(dashboard.metrics.profit)]].map(([label,v])=><div key={label}><span>{label}</span><strong className={v.includes("-")?"is-negative":undefined}>{v}</strong></div>)}</div>
-          <div className={`desk-workbench ${record?'has-record':''}`}><section className="desk-channel-section"><div className="desk-block-heading"><h2>渠道经营</h2><button onClick={()=>open('data')}>导入 / 查看明细<ArrowUpRight size={13}/></button></div><p className="desk-observation-date">当前观察日 · {dashboard.metrics.date}</p><div className="desk-channel-scroll"><table className="desk-channel-table"><thead><tr><th>渠道</th><th>收入 / 元</th><th>广告费 / 元</th><th>ROI</th><th>CAC / 元</th><th>库存 / 件</th></tr></thead><tbody>{dashboard.metrics.channels.length?dashboard.metrics.channels.map(ch=><tr key={ch.channel}><td>{ch.channel}</td><td>{number(ch.revenue,0)}</td><td>{number(ch.advertising_cost,0)}</td><td>{number(ch.roi)}</td><td>{number(ch.cac)}</td><td>{number(ch.inventory,0)}</td></tr>):<tr><td colSpan={6} className="desk-empty-row">本轮反馈为汇总数据，未提供渠道明细。</td></tr>}</tbody></table></div><RevenueStrip dashboard={dashboard}/><p className="desk-data-note">{dashboard.quality.source==='demo'?'日级示例为合成数据，非三只松鼠内部业绩。':'日级数据由上传方提供。'}<br/>利润口径：营销贡献利润。</p></section>
+          <div className={`desk-workbench ${record?'has-record':''}`}><section className="desk-channel-section"><div className="desk-block-heading"><h2>渠道经营</h2><button onClick={()=>open('data')}>导入 / 查看明细<ArrowUpRight size={13}/></button></div><p className="desk-observation-date">当前观察日 · {dashboard.metrics.date}</p><div className="desk-channel-scroll"><table className="desk-channel-table"><thead><tr><th>渠道</th><th>收入 / 元</th><th>广告费 / 元</th><th>ROI</th><th>CAC / 元</th><th>库存 / 件</th></tr></thead><tbody>{dashboard.metrics.channels.length?dashboard.metrics.channels.map(ch=><tr key={ch.channel}><td>{ch.channel}</td><td>{number(ch.revenue,0)}</td><td>{number(ch.advertising_cost,0)}</td><td>{number(ch.roi)}</td><td>{number(ch.cac)}</td><td>{number(ch.inventory,0)}</td></tr>):<tr><td colSpan={6} className="desk-empty-row">本轮反馈为汇总数据，未提供渠道明细。</td></tr>}</tbody></table></div><RevenueStrip dashboard={dashboard}/><p className="desk-data-note">{dashboard.quality.source==='demo'?'日级示例为合成数据，非企业内部业绩。':'日级数据由上传方提供。'}<br/>利润口径：营销贡献利润。</p></section>
           <section className="desk-decision-section"><div className="desk-block-heading"><h2>{record?'决策与执行':'制定决策'}</h2><button onClick={()=>{setModelTab('reward');open('model');}}>收益与惩罚因子<ArrowUpRight size={13}/></button></div>
           {!active&&!record&&<form className="desk-composer" onSubmit={submit}>
             <label className="field-label">经营场景<select aria-label="经营场景" value={scenario} onChange={e=>{const s=SCENARIOS.find(x=>x.name===e.target.value);if(s)chooseScenario(s);}}>{SCENARIOS.map(s=><option key={s.name} value={s.name}>{s.name}</option>)}</select></label>

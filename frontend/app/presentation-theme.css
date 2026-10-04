@@ -1,0 +1,96 @@
+/* Larger type and dark surfaces for screenshots shown inside a blue-and-white PPT. */
+body{background:var(--background);color:var(--ink)}
+.desk{font-family:'DengXian','PingFang SC','Microsoft YaHei',sans-serif}
+.desk-sidebar{background:#131912;padding-top:28px}
+.desk-brand strong{font-size:18px;font-weight:700}
+.desk-brand div>span{font-size:11px;color:var(--muted)}
+.desk-monogram{width:36px;height:36px;color:var(--accent);background:#282a1e;border-color:#6a563b;font-size:22px;border-radius:7px}
+.desk-nav{margin-top:34px}.desk-nav button{font-size:14px;min-height:44px;color:var(--muted)}
+.desk-nav button.selected{background:#2c3022;color:var(--accent);box-shadow:inset 2px 0 0 var(--accent)}
+.desk-nav button:hover,.desk-history>button:hover{background:var(--surface-raised);color:var(--ink)}
+.desk-history>button.selected{background:var(--surface-raised);color:var(--ink)}
+.desk-section-label{font-size:12px}.desk-history>p,.desk-history>button>span{font-size:12px}.desk-history small{font-size:11px}
+.desk-sidebar-bottom>button,.desk-local-status{font-size:12px}.desk-local-status i.connected{background:var(--green)}
+.desk-header{height:65px}.desk-header>div:first-child{font-size:13px}.desk-header-actions button{font-size:12px;color:var(--muted)}
+.desk-header-actions button:hover{color:var(--accent)}.desk-crumb-divider{color:#74826e}
+.desk-content{padding-top:33px}.desk-page-heading{margin-bottom:30px}.desk-page-heading h1{font-size:30px;letter-spacing:0;font-weight:700}
+.desk-page-heading p{font-size:13px;margin-top:8px}.desk-page-heading>.button{padding:10px 15px}
+.desk-metrics{padding-bottom:29px;margin-bottom:32px}.desk-metrics span{font-size:13px;margin-bottom:10px}
+.desk-metrics strong,.desk-revenue-strip strong,.desk .state-stats strong{font-family:'Bahnschrift','DIN Alternate','DengXian',sans-serif;font-variant-numeric:tabular-nums}
+.desk-metrics strong{font-size:34px;font-weight:600;letter-spacing:-.5px}.desk-metrics .is-negative{color:#efb5a0}
+.desk-workbench{grid-template-columns:minmax(0,1fr) 400px;gap:32px}.desk-decision-section{padding-left:30px}
+.desk-block-heading{margin-bottom:20px}.desk-block-heading h2{font-size:18px}.desk-block-heading>button{font-size:12px;color:var(--muted)}
+.desk-block-heading>button:hover{color:var(--accent)}.desk-observation-date{font-size:12px;margin-bottom:16px}
+.desk-channel-scroll{background:var(--surface);border-radius:7px}.desk-channel-table{min-width:575px;font-size:13px}
+.desk-channel-table th{font-size:12px;background:#252e23;padding:13px 10px}.desk-channel-table td{font-size:13px;padding:17px 10px;color:var(--ink)}
+.desk-channel-table tr:hover td{background:#283127}.desk-channel-table td:first-child{font-weight:600}
+.desk-revenue-strip{padding:23px 0 21px}.desk-revenue-strip span{font-size:12px}.desk-revenue-strip strong{font-size:29px;color:var(--ink)}
+.desk-revenue-strip small{font-size:11px}.desk-revenue-strip svg{max-height:82px}
+.desk-data-note{font-size:12px;line-height:1.85}.desk-footnote{font-size:11px}.desk-footnote>button{font-size:11px}
+.desk .field-label{font-size:13px;color:var(--muted)}.desk-composer{gap:17px}
+.desk input,.desk select,.desk textarea{background:var(--surface);color:var(--ink);border-color:#4b5848;font-size:14px;padding:10px 12px;border-radius:6px}
+.desk input:not([type=checkbox]):not([type=file]){background:var(--surface);color:var(--ink);border-color:#4b5848;font-size:14px}
+.desk input::placeholder,.desk textarea::placeholder{color:#a1ac9b;opacity:1}
+.desk input:focus,.desk select:focus,.desk textarea:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.desk input[type=checkbox]{accent-color:var(--accent)}
+.desk-composer textarea{font-size:14px;min-height:116px;line-height:1.85;resize:vertical}
+.desk-composer-options label{font-size:13px}.desk-composer-options label>span{font-size:12px;bottom:12px}
+.desk-constraints>summary{font-size:12px}.desk-composer-footer>button{background:var(--accent);color:var(--accent-ink);font-size:14px;font-weight:700;min-height:44px;border-radius:6px}
+.desk-composer-footer>button:hover{background:#fac586}.desk-composer-footer>button:disabled{background:#a9895c;opacity:.7}
+.desk .button{font-size:12px;border-radius:6px;min-height:40px}
+.desk .button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;box-shadow:none}
+.desk .button.primary:hover{background:#fac586}.desk .button.subtle,.desk-next{background:transparent;border-color:#53604d;color:var(--ink)}
+.desk .button.subtle:hover,.desk-next:hover{background:var(--surface-raised);border-color:var(--accent)}
+.desk button:focus-visible,.desk a:focus-visible,.desk summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.desk .check-field,.desk .settings-details summary{font-size:12px;color:var(--muted)}
+.desk-drawer{background:var(--background);box-shadow:-14px 0 45px #00000045}.desk-drawer-backdrop{background:#050a0580}
+.desk-drawer>header{background:var(--surface)}.desk-drawer>header h2{font-size:19px}.desk-drawer>header span{font-size:12px}
+.desk-drawer-tabs button{font-size:13px}.desk-drawer-tabs button.active{color:var(--accent);border-color:var(--accent)}
+.desk-drawer>header>button:hover{background:var(--surface-raised)}.desk-drawer-body{padding-top:25px}
+.desk .panel,.desk .library-card,.desk .history-expanded>.panel{background:var(--surface);border-color:var(--line);border-radius:7px;box-shadow:none}
+.desk .metric-card,.desk .data-intro,.desk .signal-grid>div,.desk .ablation-grid>div,.desk .result-stats,.desk .library-banner{background:var(--surface);border-color:var(--line);box-shadow:none}
+.desk .metric-card strong,.desk .state-stats strong,.desk .signal-grid strong,.desk .ablation-grid strong,.desk .result-stats strong,.desk .before-after strong,.desk .parameter-grid strong,.desk .transition-list strong,.desk .library-banner h2{color:var(--ink)}
+.desk .metric-card span,.desk .metric-card small{color:var(--muted)}.desk .metric-card strong{font-family:'Bahnschrift','DengXian',sans-serif;font-size:29px}
+.desk .role-index,.desk .component-index{background:var(--surface-raised);color:var(--muted)}
+.desk .panel-head h2,.desk .library-card h2,.desk .data-intro h2{color:var(--ink);font-size:16px}
+.desk .panel-head p,.desk .data-intro p,.desk .body-copy,.desk .simple-list,.desk .explanation-summary,.desk .watch-metrics,.desk .factor-summary p,.desk .role-list p,.desk .signal-grid span,.desk .evidence-quote,.desk .source-cell,.desk .form-footer p,.desk .library-card>p,.desk .library-banner p,.desk .ablation-grid p{color:var(--muted);font-size:12px}
+.desk .role-list strong,.desk .bias-top strong,.desk .table-scroll td strong,.desk .history-summary strong{color:var(--ink)}
+.desk .fine-print,.desk .small-label,.desk .history-metadata,.desk .parameter-grid>div,.desk .state-stats span,.desk .library-card>code{color:var(--muted);font-size:11px}
+.desk .notice,.desk .notice.amber,.desk .notice.green{background:#2b3025;border-color:#48523a;color:var(--muted);font-size:12px}
+.desk .notice.amber{border-left:3px solid var(--accent)}.desk .notice.green{border-left:3px solid var(--green)}
+.desk .badge,.desk .badge.blue,.desk .badge.green,.desk .badge.amber{background:#303829;color:#d1dbc7;border-color:#4d5a42;font-size:11px}
+.desk .badge.amber{color:#f5ca8b;background:#3c3425;border-color:#69583b}
+.desk .table-scroll{border-color:var(--line)}.desk .table-scroll table{font-size:12px;color:var(--ink)}
+.desk .table-scroll th{font-size:11px;background:#293226;color:var(--muted);border-color:var(--line)}
+.desk .table-scroll td{color:var(--ink);border-color:var(--line)}.desk .table-scroll td strong{font-size:12px}
+.desk .table-scroll td small{color:var(--muted);font-size:11px}
+.desk .bias-list pre,.desk .library-card pre,.desk .network-code,.desk .raw-json{background:#171e16;border-color:var(--line);color:#d0dcc6;font-size:12px}
+.desk .flow{background:var(--surface);border-color:var(--line)}.desk .flow-step{color:var(--muted);font-size:11px}
+.desk .flow-number{background:#252e21;border-color:#4b5842;color:var(--muted)}.desk .flow-step.done{color:var(--ink)}
+.desk .flow-step.done .flow-number{background:#3b3724;border-color:#a68552;color:var(--accent)}.desk .flow-arrow{color:#849277}
+.desk .vector-grid>div,.desk .update-equation{background:#263021;border-color:var(--line)}
+.desk .vector-grid span,.desk .update-equation span{color:var(--muted)}.desk .vector-grid strong,.desk .update-equation strong{color:var(--ink)}
+.desk .update-equation b{color:var(--accent)}.desk .factor-bar,.desk .mini-track{background:#35432c}.desk .factor-bar i{background:#7c8655}
+.desk .factor-bar span{color:var(--ink)}.desk .mini-track i{background:var(--accent)}.desk .signature,.desk .model-meta{color:var(--muted)}
+.desk .tabs{border-color:var(--line)}.desk .tabs button{color:var(--muted);font-size:12px}.desk .tabs button.active{color:var(--accent)}
+.desk .tabs button.active:after{background:var(--accent)}.desk .history-entry{border-color:var(--line)}.desk .history-summary{color:var(--muted)}
+.desk .history-summary small{color:var(--muted);font-size:12px}.desk .history-dot{background:var(--accent);border-color:#695941}
+.desk .chart-placeholder{background:var(--surface)}.desk .recharts-cartesian-axis-tick text{fill:var(--muted)}.desk .recharts-legend-item-text{color:var(--muted)!important}
+.desk .recharts-tooltip-wrapper{color:var(--ink)}.desk .positive{color:#c2d8b3!important}.desk .negative{color:#f2b49d!important}.desk .required{color:#f2b49d}
+.desk .error-banner{background:#3c2920;border:1px solid #8c6141;color:#f7c5a4;font-size:13px;border-radius:6px}
+.desk .error-banner button{background:transparent;color:#f7c5a4}.desk-toast,.desk-learning{background:#293225;color:var(--ink);border-color:#4c5d41}
+.desk-explanation{font-size:14px}.desk-reasons{font-size:12px}.desk-decision-title h2{font-size:22px;color:var(--ink)}
+.desk-result-meta,.desk-saved-result,.desk-evidence{font-size:12px}.desk-execution h3{font-size:15px}.desk-execution>p{font-size:12px}
+.desk-record-status{font-size:11px;background:#303829;color:#cfdbbd;border-color:#536043}
+.desk-execution .field-label{max-width:none}.desk-saved-result span:first-child{color:var(--accent)}
+.reward-guide-heading h3{font-size:22px}.reward-guide-heading p{font-size:13px}.reward-formula strong{font-size:16px;color:var(--ink)}
+.reward-formula code{font-size:13px;color:#d3c49d}.reward-formula p,.reward-goal p,.reward-boundary,.reward-extra{color:var(--muted);font-size:12px}
+.reward-group h4{font-size:15px}.desk .reward-group strong{color:var(--ink);font-size:14px}.reward-calculation{font-size:12px;color:var(--ink)}
+.desk .reward-group small{font-size:11px;color:var(--muted)}.desk .reward-group td:last-child{color:var(--accent);font-size:13px}
+.company-boundary,.company-notes p{font-size:12px}.company-heading h3{font-size:19px}.company-notes strong{font-size:13px}
+.share-view>img{background:#fff;border:0;border-radius:8px;padding:10px}.share-url{background:var(--surface);border-color:var(--line);font-size:13px;color:var(--accent)}
+.share-kind{font-size:18px}.share-view>p{font-size:13px;color:var(--muted)}
+@media(max-width:1200px){.desk-workbench,.desk-workbench.has-record{grid-template-columns:1fr}.desk-decision-section{padding-left:0}.desk-metrics strong{font-size:30px}}
+@media(max-width:760px){.desk-header{height:57px}.desk-header>div:first-child{font-size:12px}.desk-content{padding:25px 18px 20px}.desk-page-heading h1{font-size:26px}.desk-page-heading p{font-size:11px}.desk-page-heading>.button{font-size:11px;padding:8px 10px}.desk-metrics span{font-size:12px}.desk-metrics strong{font-size:29px}.desk-workbench{gap:24px}.desk-block-heading h2{font-size:17px}.desk-block-heading>button{font-size:11px}.desk-channel-table{min-width:555px}.desk-channel-table td{font-size:12px}.desk-composer textarea{font-size:14px}.desk .reward-group table{min-width:0}.desk .reward-group td{padding:0}.desk .reward-group td:not(:first-child){font-size:12px}.desk .reward-group td:nth-child(2){color:var(--muted)}.desk .reward-group td:last-child{color:var(--accent)}.desk .reward-group td small{min-width:0}.desk-drawer>header h2{font-size:18px}.desk-drawer-tabs button{font-size:12px}.desk .fine-print{font-size:11px}.desk-decision-title h2{font-size:20px}.desk .feedback-fields{grid-template-columns:1fr 1fr}}
+@media(prefers-reduced-motion:reduce){.desk *, .desk *::before,.desk *::after{transition:none!important;scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
+@media print{body,.desk{background:#fff;color:#222}.desk-sidebar,.desk-header,.desk-composer-footer,.desk-footnote{display:none}.desk-main{margin-left:0}.desk-content{padding:0}.desk table,.desk th,.desk td,.desk input,.desk textarea,.desk select{background:#fff!important;color:#222!important}.desk-metrics strong,.desk-metrics span,.desk-data-note{color:#222!important}}

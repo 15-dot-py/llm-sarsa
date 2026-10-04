@@ -21,7 +21,7 @@ export interface RewardCatalog {
   factors: {name:string;label:string;formula:string;note:string;sign:number;lower:number;upper:number}[];
   profiles: (Profile & {raw_weights:Record<string,number>})[];
 }
-export interface LLMStatus { available: boolean; mode: string; model: string; calls_today: number; daily_limit: number; }
+export interface LLMStatus { available: boolean; configured?: boolean; last_error?: string | null; mode: string; model: string; calls_today: number; daily_limit: number; }
 export interface Dashboard { metrics: Metrics; series: Metrics[]; quality: Quality; state: State; bias: Bias[]; llm: LLMStatus; training_status: string; model_version: string; active_decision: Decision | null; profiles: Profile[]; }
 export interface Importance { name: string; label: string; permutation_mean: number; permutation_std: number; spearman: Num; q_sensitivity: Num; present: boolean; }
 export interface FactorAnalysis { importance: Importance[]; method: string; target: string; warning: string; status: string; train_n?: number; test_n?: number; test_mse?: number; }
@@ -32,6 +32,7 @@ export interface Update { loss: number; q_before: number; target: number; bootst
 export interface Transition { state: number[]; action: number; reward: number; next_state: number[]; next_action: number | null; next_action_name?: string; next_action_confirmed: boolean; source: string; terminal: boolean; update?: Update; model_version_after?: string; }
 export interface Explanation { selected_action: string; source: string; summary: string; reasons: string[]; watch_metrics: string[]; limitations: string[]; fallback_reason: string | null; }
 export interface Decision {
+  input_audit?: {used_signals:{name:string;description:string;value:Num}[];business_claims:Record<string,string>;data_source:string;note:string;goal_source?:string;explicit_constraints?:string[]};
   company_evidence?: CompanyEvidence[];
   id: string; timestamp: string; status: string; question: string; model_version: string;
   state_vector: number[]; factor_values: Factor[]; factor_importance: FactorAnalysis; factor_signature: string;

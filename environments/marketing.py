@@ -1,7 +1,7 @@
 """Stochastic channel response with bounded controls, saturation, carryover and inventory."""
 import copy
 import numpy as np
-from decision_models.actions import CHANNELS, apply_action, action_mask, ActionConstraints
+from decision_models.actions import CHANNELS, ACTIONS, apply_action, action_mask, ActionConstraints
 from reward import RewardEngine, PROFILES
 from factor_engine import FactorEngine
 from bias_engine import BiasEngine
@@ -38,8 +38,10 @@ def metrics_from_rows(rows, previous_revenue=None):
         m['channels'].append({'channel':r['channel'],'revenue':float(r['revenue']),'advertising_cost':float(r['advertising_cost']),
                               'profit':p,'roi':roi,'cac':cac,'inventory':float(r['inventory']),
                               'conversion_rate':float(r['orders'])/float(r['clicks']) if float(r['clicks'])>0 else None})
+        prefix=dict(zip(CHANNELS,['douyin','xiaohongshu','taobao','search','private']))[r['channel']]
+        m[f'{prefix}_roi']=roi; m[f'{prefix}_cac']=cac
         if r['channel']=='抖音': m['douyin_cac']=cac; m['douyin_roi']=roi
-    for name,ch in [('douyin_share','抖音'),('xiaohongshu_share','小红书'),('private_share','私域')]:
+    for name,ch in [('douyin_share','抖音'),('xiaohongshu_share','小红书'),('private_share','私域'),('taobao_share','淘宝'),('search_share','搜索广告')]:
         m[name]=m['budgets'].get(ch,0)/max(ads,1)
     return m
 
@@ -51,18 +53,29 @@ def context_from_metrics(m):
             'unit_cost':unit_cost,'channel_roi':m.get('channel_roi',{})}
 
 class MarketingEnvironment:
-    def __init__(self,seed=42,horizon=28,profile=None,calibration=None,constraints=None):
+    def __init__(self,seed=42,horizon=28,profile=None,calibration=None,constraints=None,diverse=False):
         self.seed=seed; self.rng=np.random.default_rng(seed); self.horizon=horizon
         self.profile=profile or PROFILES['balanced_growth']; self.constraints=constraints or ActionConstraints()
         self.factor_engine=FactorEngine(); self.reward_engine=RewardEngine(); self.calibration=calibration
+        self.diverse=diverse; self.observation_missing=set()
         self.reset()
 
     def reset(self):
+        self.observation_missing=set()
         self.t=0; self.history=[]; self.demand=float(self.rng.uniform(.85,1.15)); self.competitor=float(self.rng.uniform(.1,.65))
         self.traffic=float(self.rng.uniform(-.15,.15)); self.loyalty=float(self.rng.uniform(.3,.55))
+        self.efficiency=np.array([1.05,.75,1.1,1.2,.65])
         budgets=dict(zip(CHANNELS,[2400.,1200.,2000.,1000.,600.]))
         self.context={'budgets':budgets,'inventory':float(self.rng.uniform(18000,36000)),
                       'price':55.,'discount':.08,'coupon':.01,'unit_cost':29.,'channel_roi':{k:.5 for k in CHANNELS}}
+        if self.diverse and not self.calibration:
+            total=float(self.rng.uniform(1800,15000))
+            self.context['budgets']=dict(zip(CHANNELS,(self.rng.dirichlet(np.ones(5)*2)*total).tolist()))
+            self.context.update(inventory=float(self.rng.uniform(1500,95000)),price=float(self.rng.uniform(35,85)),
+                                discount=float(self.rng.uniform(0,.22)),coupon=float(self.rng.uniform(0,.03)))
+            self.context['unit_cost']=self.context['price']*float(self.rng.uniform(.32,.56))
+            self.efficiency*=self.rng.uniform(.55,1.65,size=5)
+            self.loyalty=float(self.rng.uniform(.18,.7)); self.demand=float(self.rng.uniform(.6,1.4))
         if self.calibration:
             self.context=context_from_metrics(self.calibration)
             # Preserve observed initial channel allocation, cap total at safety limit.
@@ -79,7 +92,14 @@ class MarketingEnvironment:
                     'advertising_budget':7200.,'new_customer_ratio':1-self.loyalty,'douyin_share':1/3,
                     'xiaohongshu_share':1/6,'private_share':1/12,'douyin_cac':65.,'douyin_roi':.2,
                     'revenue':40000.,'profit':5200.,'sales':800.,'volatility':0.})
-        self._externals(); self._bias_metrics(); return self.state()
+        self._externals(); self._bias_metrics()
+        if self.diverse:
+            # Start from a measured synthetic day rather than invented fixed ROI/CAC.
+            self.step(len(ACTIONS)-1)
+            self.t=0; self.history=[]; self._externals(); self._bias_metrics()
+            self.observation_missing={k for k in ['seasonality','holiday_index','competitor_intensity',
+                'platform_traffic_change','market_demand_index'] if self.rng.random()<.5}
+        return self.state()
 
     def _bias_metrics(self):
         for signal in BiasEngine().analyze(self.history):
@@ -92,6 +112,7 @@ class MarketingEnvironment:
 
     def state(self,semantic=True):
         m=dict(self.metrics)
+        for k in self.observation_missing: m[k]=None
         if not semantic:
             for k in ['seasonality','holiday_index','competitor_intensity','platform_traffic_change','market_demand_index']: m[k]=None
         return self.factor_engine.build(m,self.profile)['vector']
@@ -109,7 +130,7 @@ class MarketingEnvironment:
         self.traffic=float(np.clip(.7*self.traffic+self.rng.normal(0,.05),-.4,.4))
         self._externals()
         rows=[]; price=self.context['price']*(1-self.context['discount'])
-        efficiency=[1.05,.75,1.1,1.2,.65]; cpm=[18,24,15,20,10]
+        efficiency=self.efficiency; cpm=[18,24,15,20,10]
         for i,k in enumerate(CHANNELS):
             budget=self.context['budgets'].get(k,0); lag=self.carryover.get(k,0)
             self.carryover[k]=.6*lag+.4*budget

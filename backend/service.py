@@ -8,6 +8,7 @@ import uuid
 import numpy as np
 from database.store import Store,dumps
 from factor_engine import FactorEngine
+from factor_engine.engine import FactorRegistry,CORE
 from factor_engine.selection import evaluate_factors
 from sarsa import DeepSARSA,SARSAConfig
 from sarsa.training import train
@@ -20,6 +21,7 @@ from data import process_csv
 from data.generate import generate_sample
 from bias_engine import BiasEngine
 from llm import LLMService
+from llm.intent import marketing_question,infer_goal,explicit_constraints
 from config.settings import ROOT,STORAGE,DATA_PATH,PROFILE_LABELS
 
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -43,6 +45,32 @@ class Platform:
         self.jobs={}; self.training_gate=threading.Lock()
         if not DATA_PATH.exists(): generate_sample(DATA_PATH)
 
+    def _engine_for(self,agent):
+        engine=self.factors if agent.state_dim==self.factors.state_dim else FactorEngine(FactorRegistry(CORE[:30]))
+        if agent.signature!=engine.registry.signature or agent.state_dim!=engine.state_dim:
+            raise ValueError('模型因子定义不兼容，不能生成决策')
+        return engine
+
+    def _agent(self,s):
+        agent=DeepSARSA.from_bytes(s['model']);self._engine_for(agent);return agent
+
+    def _session(self,sid):
+        s=self.store.session(sid);agent=self._agent(s)
+        if agent.state_dim!=self.factors.state_dim and not s['active_decision']:
+            # Keep old data/history and archive the old checkpoint. An active cycle
+            # stays on its original model until the confirmed SARSA transition ends.
+            with self.lock,self.store.connect() as c:
+                current=self.store.session(sid,c)
+                if current['active_decision'] or self._agent(current).state_dim==self.factors.state_dim:return current
+                c.execute('CREATE TABLE IF NOT EXISTS model_archive (session_id TEXT, archived TEXT, model BLOB, config TEXT)')
+                c.execute('INSERT INTO model_archive VALUES (?,?,?,?)',(sid,now(),current['model'],dumps(current['config'])))
+                config={**current['config'],'base_id':self.base_id,'training_status':'预训练 已升级渠道因子',
+                        'model_migration':'原模型已归档，经营数据和历史记录保留'}
+                c.execute('UPDATE sessions SET model=?,config=?,updated=? WHERE id=?',(self.base.to_bytes(),dumps(config),now(),sid))
+                if self.base_report:self.store.set_metadata(f'training:{sid}',{**self.base_report,'model_id':self.base_id},c)
+            s=self.store.session(sid)
+        return s
+
     def new_session(self):
         dataset=process_csv(DATA_PATH.read_bytes(),'demo'); sid=secrets.token_urlsafe(32)
         config={'base_id':self.base_id,'training_status':'预训练' if self.base.updates else '未训练初始化',
@@ -55,9 +83,9 @@ class Platform:
         return {'session_id':sid,'dataset':dataset['quality'],'training_status':config['training_status']}
 
     def dashboard(self,sid):
-        s=self.store.session(sid); dataset=s['dataset']; metrics=s['metrics']; h=dataset['daily']
+        s=self._session(sid); dataset=s['dataset']; metrics=s['metrics']; h=dataset['daily']
         bias=self.bias.analyze(h); bias_values={x['name']:x['score'] for x in bias}
-        state=self.factors.build(metrics,PROFILES['balanced_growth'],bias=bias_values)
+        state=self._engine_for(self._agent(s)).build(metrics,PROFILES['balanced_growth'],bias=bias_values)
         return {'metrics':metrics,'series':[{k:x.get(k) for k in ['date','revenue','profit','roi','cac','inventory_level','advertising_budget','conversion_rate','repeat_purchase_rate']} for x in h],
                 'quality':dataset['quality'],'state':state,'bias':bias,'llm':self.llm.status(),
                 'training_status':s['config']['training_status'],'model_version':self.version(s),
@@ -65,7 +93,7 @@ class Platform:
                 'profiles':[{'name':k,'label':PROFILE_LABELS[k],**v.to_dict()} for k,v in PROFILES.items()]}
 
     def version(self,s,agent=None):
-        a=agent or DeepSARSA.from_bytes(s['model'],self.factors.registry.signature)
+        a=agent or self._agent(s)
         return f"{s['config']['base_id']}-u{a.updates}"
 
     def import_data(self,sid,blob,source='uploaded'):
@@ -78,11 +106,17 @@ class Platform:
         return {'quality':dataset['quality'],'current':dataset['current']}
 
     def _build_decision(self,s,question,profile,constraints,parent=None,agent=None):
-        agent=agent or DeepSARSA.from_bytes(s['model'],self.factors.registry.signature)
+        agent=agent or self._agent(s)
         company_evidence=self.store.retrieve_company_evidence(question)
         semantic=self.llm.extract(question,company_evidence=company_evidence)
         history=s['dataset']['daily']; bias=self.bias.analyze(history)
-        state=self.factors.build(s['metrics'],profile,semantic['signals'],{x['name']:x['score'] for x in bias})
+        state=self._engine_for(agent).build(s['metrics'],profile,semantic['signals'],{x['name']:x['score'] for x in bias})
+        used=[{'name':f['name'],'description':f['description'],'value':f['raw']} for f in state['factors']
+              if f['provenance']=='语义信号（未实测）']
+        input_audit={'used_signals':used,'business_claims':{k:semantic['signals'][k] for k in ['inventory_pressure','douyin_cac','repeat_purchase']
+                         if semantic['signals'].get(k,'unknown')!='unknown'},
+                     'data_source':s['dataset']['quality']['label'],
+                     'note':'定性库存、获客与回流描述保留为证据，不覆盖运营数据库。相同经营状态、目标和约束可以得到同一动作。'}
         context=context_from_metrics(s['metrics']); mask,reasons=action_mask(context,constraints)
         if not mask.any(): raise BusinessError('当前数据下没有能同时满足预算与毛利限制的离散动作。请核对业务上限，或先人工调整现有预算与价格。')
         action=agent.select_action(state['vector'],mask,explore=False); q=agent.q_values(state['vector'])
@@ -97,7 +131,7 @@ class Platform:
                 'expected_reward':MarketingEnvironment.forecast(s['metrics'],action,profile,constraints=constraints),
                 'actual_reward':None,'reward_profile':profile.name,'reward_weights':list(map(float,profile.normalized_weights)),
                 'user_feedback':None,'decision_source':'Deep SARSA','explanation_source':None,
-                'semantic':semantic,'company_evidence':company_evidence,'bias':bias,'mask_reasons':reasons,'constraints':asdict(constraints),
+                'semantic':semantic,'input_audit':input_audit,'company_evidence':company_evidence,'bias':bias,'mask_reasons':reasons,'constraints':asdict(constraints),
                 'context':context,'metrics':s['metrics'],'parent_decision':parent,
                 'training_data_source':'合成环境预训练' if agent.updates else '未训练，建议先在实验室训练',
                 'execution':None,'transition':None}
@@ -106,17 +140,22 @@ class Platform:
         return record
 
     def decide(self,sid,request):
-        if request.reward_profile not in PROFILES: raise BusinessError('未知经营目标')
-        profile=PROFILES[request.reward_profile]
+        if not marketing_question(request.question): raise ValueError('请输入营销或经营问题，例如库存消化、渠道投入、获客或利润。无关内容不会生成营销动作。')
+        goal=infer_goal(request.question) if request.reward_profile=='auto' else request.reward_profile
+        if goal not in PROFILES: raise BusinessError('未知经营目标')
+        profile=PROFILES[goal]
         if request.weights is not None:
             if set(request.weights)!=set(REWARD_KEYS): raise BusinessError('自定义权重必须完整包含 12 项指标')
             profile=RewardProfile(profile.name,tuple(request.weights[k] for k in REWARD_KEYS))
         if not set(request.constraints.stopped_channels).issubset(CHANNELS): raise BusinessError('停用渠道名称不合法')
         constraints=ActionConstraints(**request.constraints.model_dump())
+        constraints,applied=explicit_constraints(request.question,constraints)
         with self.lock:
-            s=self.store.session(sid)
+            s=self._session(sid)
             if s['active_decision']: raise BusinessError('当前决策周期尚未结束，请到历史或决策中心继续执行 / 反馈')
             record=self._build_decision(s,request.question,profile,constraints)
+            record['input_audit'].update(goal_source='根据问题识别' if request.reward_profile=='auto' else '用户选择',
+                                         explicit_constraints=applied)
             with self.store.connect() as c:
                 self.store.put_decision(sid,record,c)
                 c.execute('UPDATE sessions SET active_decision=?,updated=? WHERE id=?',(record['id'],now(),sid))
@@ -143,7 +182,7 @@ class Platform:
             if record['parent_decision']:
                 prev=self.store.decision(sid,record['parent_decision'],c)
                 if prev['status']!='awaiting_next': raise BusinessError('上一转移已更新或状态无效')
-                agent=DeepSARSA.from_bytes(s['model'],self.factors.registry.signature)
+                agent=self._agent(s)
                 # Bootstrap with exactly the next action confirmed here, even when manually overridden.
                 trace=agent.update(prev['state_vector'],prev['execution']['action'],prev['actual_reward']['total'],
                                    record['state_vector'],action,next_mask=mask)
@@ -182,7 +221,7 @@ class Platform:
                  inventory_pressure=float(np.clip(o['inventory_level']/max(o['sales'],1)/60,0,1)) if o['sales'] is not None else None,
                  volatility=abs(o['revenue']/max(prev['revenue'],1)-1),channels=[],channel_roi={},
                  cost_method='用户反馈营销贡献利润，尚未审计')
-        for key,k in [('douyin_share','抖音'),('xiaohongshu_share','小红书'),('private_share','私域')]:
+        for key,k in [('douyin_share','抖音'),('xiaohongshu_share','小红书'),('private_share','私域'),('taobao_share','淘宝'),('search_share','搜索广告')]:
             m[key]=budgets.get(k,0)/max(sum(budgets.values()),1)
         return m,{'source':'actual','label':'用户填报实际结果；未填指标保持缺失，未审计',
                   'budget_source':'实际总投入按执行渠道比例分配' if ads is not None else '执行后预算计划，非实测投入'}
@@ -204,8 +243,8 @@ class Platform:
             dataset=s['dataset']; dataset['daily'].append(metrics); dataset['current']=metrics
             dataset['quality']['latest_result_source']=provenance['label']
             s['metrics']=metrics; s['dataset']=dataset
-            agent=DeepSARSA.from_bytes(s['model'],self.factors.registry.signature)
-            state=self.factors.build(metrics,profile,bias={x['name']:x['score'] for x in self.bias.analyze(dataset['daily'])})
+            agent=self._agent(s)
+            state=self._engine_for(agent).build(metrics,profile,bias={x['name']:x['score'] for x in self.bias.analyze(dataset['daily'])})
             transition={'state':record['state_vector'],'action':record['execution']['action'],
                         'reward':reward['total'],'next_state':state['vector'],'next_action':None,
                         'next_action_confirmed':False,'source':provenance['source'],'terminal':request.terminal}
@@ -242,7 +281,7 @@ class Platform:
             if prev['status']!='awaiting_next' or not prev.get('next_decision'): raise BusinessError('仅可结束等待下一实际动作的周期')
             child=self.store.decision(sid,prev['next_decision'],c)
             if child['status']!='draft' or s['active_decision']!=child['id']: raise BusinessError('下一动作已经执行，不能改为终止转移')
-            agent=DeepSARSA.from_bytes(s['model'],self.factors.registry.signature)
+            agent=self._agent(s)
             tr=prev['transition']; tr['terminal']=True; tr['end_reason']='用户结束周期，下一建议未执行'
             tr['next_action']=None; tr['next_action_confirmed']=False
             tr['update']=agent.update(prev['state_vector'],prev['execution']['action'],prev['actual_reward']['total'],tr['next_state'],None,done=True)
@@ -254,7 +293,7 @@ class Platform:
             return prev
 
     def lab(self,sid):
-        s=self.store.session(sid); agent=DeepSARSA.from_bytes(s['model'],self.factors.registry.signature)
+        s=self._session(sid); agent=self._agent(s)
         manifest=ROOT/'data'/'training_report.json'; experiments=ROOT/'data'/'experiments.json'
         session_report=self.store.get_metadata(f'training:{sid}')
         return {'training':session_report or (self.base_report if s['config']['base_id']==self.base_id else None),
@@ -262,7 +301,7 @@ class Platform:
                 'importance':evaluate_factors(s['dataset']['daily'],agent),'updates':agent.updates,
                 'model_version':self.version(s,agent),'network':str(agent.network),
                 'epsilon':agent.epsilon,'config':asdict(agent.config),
-                'current_state':self.factors.build(s['metrics'],PROFILES['balanced_growth'],bias={x['name']:x['score'] for x in self.bias.analyze(s['dataset']['daily'])}),
+                'current_state':self._engine_for(agent).build(s['metrics'],PROFILES['balanced_growth'],bias={x['name']:x['score'] for x in self.bias.analyze(s['dataset']['daily'])}),
                 'recent_transitions':[x['transition'] for x in self.store.history(sid) if x.get('transition')][:10]}
 
     def start_training(self,sid,request):
@@ -277,7 +316,7 @@ class Platform:
         def worker_with_progress():
             def cb(curve): job['progress']=curve['episode']; job['curves'].append(curve)
             try:
-                cfg=SARSAConfig(**request.model_dump()); agent,report=original(cfg,progress=cb,calibration=s['metrics'])
+                cfg=SARSAConfig(**request.model_dump(),architecture='dueling-v2'); agent,report=original(cfg,progress=cb,calibration=s['metrics'])
                 with self.lock,self.store.connect() as c:
                     current=self.store.session(sid,c)
                     if current['active_decision']: raise BusinessError('训练期间存在活动决策，训练结果未替换')

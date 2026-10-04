@@ -1,0 +1,28 @@
+{
+  "original": {
+    "decisions": 224,
+    "actions": {
+      "increase_new_customer_acquisition": 213,
+      "decrease_discount": 4,
+      "decrease_douyin_budget": 7
+    },
+    "dominant_share": 0.9508928571428571,
+    "average_reward": 0.168708696875
+  },
+  "retrained": {
+    "decisions": 224,
+    "actions": {
+      "increase_price": 11,
+      "decrease_price": 77,
+      "increase_retention_marketing": 24,
+      "increase_coupon": 96,
+      "clear_inventory_promotion": 13,
+      "increase_douyin_budget": 1,
+      "increase_search_ads": 1,
+      "decrease_search_ads": 1
+    },
+    "dominant_share": 0.42857142857142855,
+    "average_reward": 0.16855239026785715
+  },
+  "method": "共同独立种子12000–12015，每种策略16轮14天；旧模型只读取原30因子及对应存在标记。合成环境，非企业效果。"
+}

@@ -3,13 +3,15 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.inspection import permutation_importance
 from factor_engine import FactorEngine
+from factor_engine.engine import FactorRegistry,CORE
 from reward import PROFILES
 from bias_engine import BiasEngine
 
 def evaluate_factors(daily,agent=None):
     total_observations=len(daily)
     daily=daily[-180:]
-    engine=FactorEngine(); factors=engine.registry.factors; n=len(factors)
+    engine=FactorEngine(FactorRegistry(CORE[:30])) if agent and agent.state_dim==72 else FactorEngine()
+    factors=engine.registry.factors; n=len(factors)
     prepared=[{**m,**{x['name']:x['score'] for x in BiasEngine().analyze(daily[:i+1])}} for i,m in enumerate(daily)]
     vectors=np.array([engine.build(m,PROFILES['balanced_growth'])['vector'][:n] for m in prepared])
     output={'target':'下一天收入增长（按时间分割；非因果解释）','n':max(len(daily)-1,0),'importance':[],

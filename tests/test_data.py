@@ -14,7 +14,7 @@ def test_demo_and_csv_metrics_and_no_fake_repeat(tmp_path):
     assert result['daily'][0]['inventory_level']==pytest.approx(sum(x['inventory'] for x in result['rows'][:5]))
     analysis=evaluate_factors(result['daily'])
     assert analysis['train_n']+analysis['test_n']==59
-    assert len(analysis['importance'])==30
+    assert len(analysis['importance'])==40
 
 def test_gbk_missing_costs_validation(tmp_path):
     df=generate_sample(tmp_path/'x.csv',days=10).drop(columns=['cogs','unit_cost','return_loss'])

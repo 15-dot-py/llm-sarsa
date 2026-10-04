@@ -14,8 +14,8 @@ def test_normalization_and_missing_mask():
     assert f.normalize(100)==(1.,True)
     assert f.normalize(float('nan'))==(0.,False)
     e=FactorEngine(); s=e.build({'roi':1},PROFILES['balanced_growth'])
-    assert len(s['vector'])==72
-    assert s['vector'][0]==.5 and s['vector'][30]==1 and s['vector'][31]==0
+    assert len(s['vector'])==92
+    assert s['vector'][0]==.5 and s['vector'][40]==1 and s['vector'][41]==0
     s2=e.build({'roi':1},PROFILES['inventory_clearance'])
     assert s['vector'][-12:]!=s2['vector'][-12:]
 
@@ -35,17 +35,17 @@ def test_action_constraints_current_and_future():
     mask,why=action_mask(env.context,rules)
     assert not mask[0] and not mask[16] and mask[-1]
     assert 'clear_inventory_promotion' in why
-    agent=DeepSARSA(72)
+    agent=DeepSARSA(92)
     for _ in range(30): assert mask[agent.select_action(env.state(),mask)]
 
 def test_no_keep_escape_when_budget_already_exceeds_cap():
     env=MarketingEnvironment(); mask,_=action_mask(env.context,ActionConstraints(max_daily_budget=100))
     assert not mask.any()
-    with pytest.raises(ValueError,match='没有合法'): DeepSARSA(72).select_action(env.state(),mask)
+    with pytest.raises(ValueError,match='没有合法'): DeepSARSA(92).select_action(env.state(),mask)
 
 def test_forward_actual_next_action_target_and_terminal():
     config=SARSAConfig(gamma=.9,learning_rate=.001)
-    a=DeepSARSA(72,config); s=np.zeros(72,dtype=np.float32)
+    a=DeepSARSA(92,config); s=np.zeros(92,dtype=np.float32)
     with torch.no_grad():
         for p in a.network.parameters(): p.zero_()
         a.network.layers[-1].bias.copy_(torch.arange(len(ACTIONS),dtype=torch.float32))
@@ -60,7 +60,7 @@ def test_forward_actual_next_action_target_and_terminal():
     with pytest.raises(ValueError): a.update(s,0,.5,s,2,next_mask=np.zeros(len(ACTIONS),bool))
 
 def test_save_load_optimizer_and_policy_rng(tmp_path):
-    a=DeepSARSA(72,signature='abc'); s=np.zeros(72,dtype=np.float32)
+    a=DeepSARSA(92,signature='abc'); s=np.zeros(92,dtype=np.float32)
     a.update(s,0,.4,s,1); a.decay(); a.save(tmp_path/'m.pt')
     b=DeepSARSA.load(tmp_path/'m.pt','abc')
     np.testing.assert_allclose(a.q_values(s),b.q_values(s))
@@ -75,7 +75,7 @@ def test_seeded_stochastic_environment_and_loop():
     assert r==rb; np.testing.assert_allclose(s,sb)
     c=MarketingEnvironment(seed=24); _,rc,_,_=c.step(17)
     assert rc!=r
-    agent=DeepSARSA(72); state=a.state(); action=agent.select_action(state,a.mask()[0])
+    agent=DeepSARSA(92); state=a.state(); action=agent.select_action(state,a.mask()[0])
     state2,reward,done,_=a.step(action); mask=a.mask()[0]; next_action=agent.select_action(state2,mask)
     assert np.isfinite(agent.update(state,action,reward,state2,next_action,done,mask)['loss'])
 

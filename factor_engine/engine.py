@@ -58,6 +58,12 @@ CORE = [
     Factor('loss_aversion_score','bias',0,1,'持续负利润且预算不收缩的历史信号',source='Bias Engine'),
     Factor('overconfidence_score','bias',0,1,'预测反复高于实际的偏差信号',source='Bias Engine'),
     Factor('recency_bias_score','bias',0,1,'短窗口波动伴随预算反复调整',source='Bias Engine'),
+    Factor('taobao_share','channel',0,1,'淘宝广告预算份额',controllable=True),
+    Factor('search_share','channel',0,1,'搜索广告预算份额',controllable=True),
+    *[Factor(f'{name}_{metric}','channel',-1 if metric=='roi' else 0,3 if metric=='roi' else 250,
+             f'{channel}营销 ROI' if metric=='roi' else f'{channel}新客广告 CAC')
+      for name,channel in [('xiaohongshu','小红书'),('taobao','淘宝'),('search','搜索广告'),('private','私域')]
+      for metric in ['roi','cac']],
 ]
 CANDIDATES = [
     Factor('customer_lifetime_value','candidate',0,5000,'需要客户级追踪',enabled=False),
@@ -91,6 +97,19 @@ class FactorEngine:
         return 2*len(self.registry.factors) + len(REWARD_KEYS)
     def build(self, metrics: dict, profile: RewardProfile, semantic=None, bias=None):
         values, provenance = dict(metrics), {k: '经营数据 / 指标公式' for k in metrics}
+        for channel in metrics.get('channels',[]):
+            prefix={'抖音':'douyin','小红书':'xiaohongshu','淘宝':'taobao','搜索广告':'search','私域':'private'}.get(channel.get('channel'))
+            if prefix:
+                for metric in ['roi','cac']:
+                    key=f'{prefix}_{metric}'
+                    if values.get(key) is None and channel.get(metric) is not None:
+                        values[key]=channel[metric];provenance[key]='经营渠道明细 / 指标公式'
+        budgets=metrics.get('budgets',{});total=sum(budgets.values())
+        if total>0:
+            for prefix,channel in [('taobao','淘宝'),('search','搜索广告')]:
+                key=f'{prefix}_share'
+                if values.get(key) is None and channel in budgets:
+                    values[key]=budgets[channel]/total;provenance[key]='经营渠道预算 / 指标公式'
         # Qualitative semantic evidence enters only unobserved EXTERNAL features.
         # Inventory/CAC claims are recorded but never replace observed business metrics.
         allowed = {'holiday_index','competitor_intensity','market_demand_index','platform_traffic_change','seasonality'}
@@ -108,6 +127,7 @@ class FactorEngine:
                             'provenance': provenance.get(f.name,'缺失：数值 0 与缺失标记同时进入网络'),
                             'clipped': bool(available and (raw<f.min_value or raw>f.max_value))})
         state = np.asarray(numbers+present+list(profile.normalized_weights),dtype=np.float32)
+        n=len(self.registry.factors)
         return {'vector': state.tolist(), 'factors': details,'signature': self.registry.signature,
-                'state_dim': len(state), 'layout': '30 normalized factors + 30 presence masks + 12 objective weights',
+                'state_dim': len(state), 'layout': f'{n} normalized factors + {n} presence masks + 12 objective weights',
                 'coverage': float(np.mean(present))}

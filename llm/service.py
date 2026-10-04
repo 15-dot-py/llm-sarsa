@@ -2,6 +2,7 @@ import json
 import os
 import re
 import threading
+import time
 from datetime import date
 from typing import Literal
 from pydantic import BaseModel, ConfigDict
@@ -37,6 +38,7 @@ class BaselineAction(BaseModel):
 class LLMService:
     def __init__(self):
         self._lock=threading.Lock(); self._day=None; self._calls=0
+        self._retry_after=0.;self._failure_reason=None
     def _settings(self):
         provider=os.getenv('LLM_PROVIDER','auto').strip().lower()
         if provider=='auto': provider='deepseek' if os.getenv('DEEPSEEK_API_KEY') else 'openai'
@@ -47,11 +49,12 @@ class LLMService:
                 'model':os.getenv('OPENAI_MODEL','gpt-4.1-mini'),'base_url':None}
     @property
     def available(self):
-        return bool(self._settings()['api_key']) and os.getenv('LLM_ENABLED','true').lower()=='true'
+        return bool(self._settings()['api_key']) and os.getenv('LLM_ENABLED','true').lower()=='true' and time.monotonic()>=self._retry_after
     def status(self):
         settings=self._settings()
         return {'available':self.available,'provider':settings['provider'],'model':settings['model'],
-                'mode':('DeepSeek JSON + 本地结构校验' if settings['provider']=='deepseek' else 'OpenAI Structured Outputs') if self.available else '无密钥：规则解析与模板解释',
+                'configured':bool(settings['api_key']),'last_error':self._failure_reason,
+                'mode':('DeepSeek JSON + 本地结构校验' if settings['provider']=='deepseek' else 'OpenAI Structured Outputs') if self.available else (self._failure_reason or 'LLM 未启用或未配置：规则解析与模板解释'),
                 'calls_today':self._calls,'daily_limit':int(os.getenv('LLM_DAILY_CALL_LIMIT','120'))}
     def _call(self,schema,prompt,payload):
         if not self.available: raise RuntimeError('LLM 未配置')
@@ -83,8 +86,24 @@ class LLMService:
         if result.output_parsed is None: raise RuntimeError('LLM 未返回有效结构化输出')
         return result.output_parsed
 
+    def _failure(self,exc):
+        # Publish only a known error category; never provider bodies, headers or keys.
+        code=getattr(exc,'code',None)
+        if code in {'credit_balance_exhausted','insufficient_quota'}:
+            message='LLM API 额度不足，本次使用规则解析和模板解释';delay=600
+        elif code in {'organization_spend_limit_exceeded','project_spend_limit_exceeded','organization_usage_limit_reached'}:
+            message='LLM API 触及账户使用限额，本次使用规则解析和模板解释';delay=600
+        elif getattr(exc,'status_code',None)==401:
+            message='LLM API 密钥验证失败，本次使用规则解析和模板解释';delay=600
+        elif getattr(exc,'status_code',None)==429:
+            message='LLM API 请求受限，本次使用规则解析和模板解释';delay=60
+        else:
+            message=f'LLM 调用或结构校验失败（{type(exc).__name__}），本次使用规则解析和模板解释';delay=30
+        self._failure_reason=message;self._retry_after=time.monotonic()+delay
+        return message
+
     def extract(self,question,company_evidence=None):
-        reason='API 密钥未配置'
+        reason=self._failure_reason or 'LLM 未启用或 API 密钥未配置'
         if self.available:
             try:
                 s=self._call(Signals,EXTRACTION_PROMPT,{'question':question,'company_background':company_evidence or []})
@@ -92,37 +111,69 @@ class LLMService:
                 d=s.model_dump()
                 for key,lo,hi in [('holiday_index',0,1),('competitor_intensity',0,1),('platform_traffic_change',-.5,.5),('market_demand_index',.5,1.5)]:
                     if d[key] is not None and not lo<=d[key]<=hi: raise ValueError('语义信号越界')
+                self._failure_reason=None
                 return {'source':'LLM','model':self._settings()['model'],'provider':self._settings()['provider'],'signals':d,'fallback_reason':None}
             except Exception as exc:
-                reason=f'结构化调用失败（{type(exc).__name__}），未采用失败输出'
-        high=bool(re.search('库存.*(高|很多|积压|严重)|积压',question))
-        cac=bool(re.search('(抖音|获客).*(高|贵|上升|越来越)',question))
-        repeat=bool(re.search('(复购|老客|回流).*(好|不错|稳定)',question))
-        holiday=bool(re.search('节日|大促|双十一|春节|618|国庆',question))
-        competitor=bool(re.search('竞争.*(强|激烈)|竞品.*(降价|压力)',question))
-        traffic=-.2 if re.search('流量.*(下降|减少)',question) else None
-        demand=1.2 if re.search('需求.*(增长|上涨)',question) else None
-        signals={'summary':question[:180],'inventory_pressure':'high' if high else 'unknown',
-                 'douyin_cac':'high' if cac else 'unknown','repeat_purchase':'high' if repeat else 'unknown',
+                reason=self._failure(exc)
+        clean=re.sub(r'不是大促|没有大促|非节日|没有节日|不在大促','',question)
+        def direction(term,up,down):
+            hits=[]
+            for clause in re.split('[，。；,;!?！？]',clean):
+                match=re.search(term+r'[^，。；,;!?！？]{0,14}',clause,re.I)
+                if not match: continue
+                part=match[0]
+                if re.search(r'没有|并未|未曾|并不|不再',part): continue
+                a=bool(re.search(up,part));b=bool(re.search(down,part))
+                if a!=b:hits.append(1 if a else -1)
+            return hits[0] if hits and len(set(hits))==1 else 0
+        inventory=direction('库存','积压|严重|很多|较多|偏高|很高','不足|缺货|较低|不多')
+        cac=direction('(?:抖音(?:获客成本|成本|CAC)|获客成本)','偏高|很高|贵|上升|上涨','下降|降低|便宜|较低')
+        repeat=direction('(?:复购|老客回流|回流)','好|不错|稳定|增长|上升','差|下降|减少|低')
+        holiday=bool(re.search('节日|大促|双十一|春节|618|国庆',clean))
+        competitor=bool(re.search('竞争.{0,6}(强|激烈)|竞品.{0,6}(降价|压力)',clean))
+        traffic=direction('流量','增长|上涨|上升|增加','下降|减少|下滑')
+        demand=direction('需求','增长|上涨|上升|增加','下降|减少|下滑')
+        level=lambda d:'high' if d==1 else 'low' if d==-1 else 'unknown'
+        signals={'summary':question[:180],'inventory_pressure':level(inventory),
+                 'douyin_cac':level(cac),'repeat_purchase':level(repeat),
                  'holiday_index':1. if holiday else None,'competitor_intensity':.8 if competitor else None,
-                 'platform_traffic_change':traffic,'market_demand_index':demand,
+                 'platform_traffic_change':.2*traffic if traffic else None,'market_demand_index':1+.2*demand if demand else None,
                  'evidence':[question[:200]],'unknowns':['语义等级是规则匹配，未调用 LLM','未实测外部信号']}
         return {'source':'Rule parser','model':None,'signals':signals,'fallback_reason':reason}
 
     def explain(self,record):
-        reason='API 密钥未配置'
+        reason=self._failure_reason or 'LLM 未启用或 API 密钥未配置'
         if self.available:
             try:
                 payload={k:record[k] for k in ['action_name','action_label','q_selected','expected_reward','metrics','bias','mask_reasons']}
+                payload.update(question=record.get('question'),input_audit=record.get('input_audit'),reward_profile=record.get('reward_profile'))
                 payload['company_background']=record.get('company_evidence',[])
                 x=self._call(Explanation,EXPLANATION_PROMPT,payload)
                 if x.selected_action!=record['action_name']: raise ValueError('LLM 返回动作不匹配，拒绝采用')
+                self._failure_reason=None
                 return {**x.model_dump(),'source':'LLM','fallback_reason':None,'model':self._settings()['model'],'provider':self._settings()['provider']}
-            except Exception as exc: reason=f'解释调用失败（{type(exc).__name__}），使用可核查模板'
+            except Exception as exc: reason=self._failure(exc)
         m=record['metrics']; roi=m.get('roi'); cac=m.get('cac')
+        from config.settings import PROFILE_LABELS
+        from decision_models import apply_action
+        goal=PROFILE_LABELS.get(record.get('reward_profile'),'当前经营目标')
+        question=record.get('question','')
+        q_reason=[]
+        legal=sorted((x for x in record.get('q_values',[]) if x['legal']),key=lambda x:x['q'],reverse=True)
+        if len(legal)>1:q_reason.append(f"在 {len(legal)} 个合法动作中，该动作 Q 值最高；比第二名高 {legal[0]['q']-legal[1]['q']:.4f}。Q 是累计回报估计，不是利润。")
+        if record.get('context') is not None:
+            old=record['context'];new=apply_action(old,record['action'])
+            changes=[f'{ch}预算 {old["budgets"].get(ch,0):,.0f} → {value:,.0f} 元' for ch,value in new['budgets'].items()
+                     if abs(value-old['budgets'].get(ch,0))>1e-6]
+            if new['discount']!=old['discount']:changes.append(f'折扣率 {old["discount"]:.0%} → {new["discount"]:.0%}')
+            if new['coupon']!=old['coupon']:changes.append(f'额外补贴率 {old["coupon"]:.0%} → {new["coupon"]:.0%}')
+            if new['price']!=old['price']:changes.append(f'标价 {old["price"]:.2f} → {new["price"]:.2f} 元')
+            q_reason.insert(0,'执行影响：'+('；'.join(changes) if changes else '预算和价格保持当前水平')+'。')
+        used=record.get('input_audit',{}).get('used_signals',[])
+        if used:q_reason.append('本次识别：'+'、'.join(x['description'] for x in used)+'；均为用户描述的语义假设，未实测。')
         return {'selected_action':record['action_name'],'source':'Template','model':None,'fallback_reason':reason,
-                'summary':f"建议{record['action_label']}。执行后对照获客成本、利润与库存变化，再决定下一轮调整。",
-                'reasons':[f"当前营销 ROI 为 {roi:.2f}。" if roi is not None else '营销 ROI 数据不足。',
+                'summary':f"针对“{question[:70]}”，按{goal}目标，模型选择{record['action_label']}。" if question else f"按{goal}目标，模型选择{record['action_label']}。",
+                'reasons':q_reason+[f"当前营销 ROI 为 {roi:.2f}。" if roi is not None else '营销 ROI 数据不足。',
                            f"获客广告 CAC 为 ¥{cac:.2f}。" if cac is not None else '新客不足，CAC 无法计算。',
                            f"当前分仓库存为 {m['inventory_level']:,.0f} 件；留意库存消化与预算消耗。" if m.get('inventory_level') is not None else '缺少分仓库存记录，需补充后评估。'],
                 'watch_metrics':['营销贡献利润','获客成本与新客数','库存覆盖天数'],

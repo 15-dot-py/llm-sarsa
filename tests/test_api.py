@@ -42,7 +42,7 @@ def test_feedback_loop_exact_confirmed_action_idempotence(setup):
     p,c,sid,h=setup; d=decision(c,h)
     assert d['decision_source']=='Deep SARSA'
     assert d['explanation_source'] in {'Template','LLM'}
-    assert len(d['state_vector'])==72 and d['status']=='draft'
+    assert len(d['state_vector'])==92 and d['status']=='draft'
     assert c.post(f"/api/decisions/{d['id']}/feedback",headers=h,json={'mode':'simulation'}).status_code==409
     before=DeepSARSA.from_bytes(p.store.session(sid)['model']).updates
     executed=c.post(f"/api/decisions/{d['id']}/execute",headers=h,json={})

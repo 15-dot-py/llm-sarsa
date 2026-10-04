@@ -21,6 +21,7 @@ class SARSAConfig:
     gradient_clip: float = 5.
     optimizer: str = 'Adam'
     seed: int = 42
+    architecture: str = 'mlp-v1'
 
     def __post_init__(self):
         if not 0<=self.gamma<=1 or not 0<=self.minimum_epsilon<=self.epsilon<=1:
@@ -28,12 +29,25 @@ class SARSAConfig:
         if not 0<self.epsilon_decay<=1 or self.learning_rate<=0 or self.hidden_size<1 or self.gradient_clip<=0:
             raise ValueError('学习参数必须处于允许范围')
         if self.optimizer not in {'Adam','SGD'}: raise ValueError('仅支持 Adam / SGD')
+        if self.architecture not in {'mlp-v1','dueling-v2'}: raise ValueError('未知 Q 网络结构')
 
 class QNetwork(nn.Module):
     def __init__(self, state_dim, action_count, hidden):
         super().__init__()
         self.layers=nn.Sequential(nn.Linear(state_dim,hidden),nn.Tanh(),nn.Linear(hidden,hidden),nn.Tanh(),nn.Linear(hidden,action_count))
     def forward(self,state): return self.layers(state)
+
+class DuelingQNetwork(nn.Module):
+    """Separate the common state value from small differences between actions."""
+    def __init__(self,state_dim,action_count,hidden):
+        super().__init__()
+        self.features=nn.Sequential(nn.Linear(state_dim,hidden),nn.Tanh(),nn.Linear(hidden,hidden),nn.Tanh())
+        self.value=nn.Linear(hidden,1); self.advantage=nn.Linear(hidden,action_count)
+    def forward(self,state):
+        # Give the twelve objective weights a comparable scale to normalized factors.
+        x=torch.cat((state[...,:-12],state[...,-12:]*8),dim=-1)
+        h=self.features(x); advantage=self.advantage(h)
+        return self.value(h)+advantage-advantage.mean(dim=-1,keepdim=True)
 
 class DeepSARSA:
     algorithm = 'Deep SARSA'
@@ -42,7 +56,8 @@ class DeepSARSA:
         torch.manual_seed(self.config.seed)
         self.rng=np.random.default_rng(self.config.seed)
         self.state_dim, self.signature = state_dim, signature
-        self.network=QNetwork(state_dim,len(ACTIONS),self.config.hidden_size)
+        cls_net=DuelingQNetwork if self.config.architecture=='dueling-v2' else QNetwork
+        self.network=cls_net(state_dim,len(ACTIONS),self.config.hidden_size)
         cls=torch.optim.Adam if self.config.optimizer=='Adam' else torch.optim.SGD
         self.optimizer=cls(self.network.parameters(),lr=self.config.learning_rate)
         self.epsilon, self.updates = self.config.epsilon, 0
@@ -82,6 +97,28 @@ class DeepSARSA:
                 'gradient_norm':grad,'updates':self.updates,'algorithm':'on-policy SARSA (no max Q)'}
 
     def decay(self): self.epsilon=max(self.config.minimum_epsilon,self.epsilon*self.config.epsilon_decay)
+
+    def warm_start_terminal_batch(self,states,rewards,masks):
+        """One-period, terminal SARSA targets measured for each legal action.
+
+        Each row uses common random innovations across the candidate actions.
+        There is no bootstrap, expert action label or fabricated LLM decision.
+        """
+        states=np.asarray(states,dtype=np.float32); rewards=np.asarray(rewards,dtype=np.float32)
+        masks=np.asarray(masks,dtype=bool)
+        if states.ndim!=2 or states.shape[1]!=self.state_dim or rewards.shape!=(len(states),len(ACTIONS)) or masks.shape!=rewards.shape:
+            raise ValueError('冷启动批次维度无效')
+        if not np.isfinite(states).all() or not np.isfinite(rewards).all() or not masks.any():
+            raise ValueError('冷启动批次数值或合法动作无效')
+        predicted=self.network(torch.from_numpy(states)); target=torch.from_numpy(rewards); valid=torch.from_numpy(masks)
+        # Fit R, then emphasize the paired differences that a shared value can hide.
+        count=valid.sum(dim=1,keepdim=True).clamp(min=1)
+        p_mean=(predicted*valid).sum(dim=1,keepdim=True)/count
+        t_mean=(target*valid).sum(dim=1,keepdim=True)/count
+        loss=self.loss_fn(predicted[valid],target[valid])+5*self.loss_fn((predicted-p_mean)[valid],(target-t_mean)[valid])
+        self.optimizer.zero_grad();loss.backward();nn.utils.clip_grad_norm_(self.network.parameters(),self.config.gradient_clip)
+        self.optimizer.step();self.updates+=1
+        return float(loss.detach())
 
     def to_bytes(self):
         buf=io.BytesIO()

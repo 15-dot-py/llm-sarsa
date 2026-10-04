@@ -36,7 +36,7 @@ def choose(kind,env,agent=None,llm=None,ablate=None):
 def evaluate(kind,agent=None,seeds=range(10000,10008),horizon=28,llm=None,ablate=None):
     episodes=[]; paths=[]
     for j,seed in enumerate(seeds):
-        env=MarketingEnvironment(seed=seed,horizon=horizon,profile=list(PROFILES.values())[j%len(PROFILES)])
+        env=MarketingEnvironment(seed=seed,horizon=horizon,profile=list(PROFILES.values())[j%len(PROFILES)],diverse=True)
         rewards=[]; metrics=[]; actions=[]
         for t in range(horizon):
             action=choose(kind,env,agent,llm,ablate); _,r,_,info=env.step(action)

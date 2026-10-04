@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: shenmou-marketing
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    numInstances: 1
+    healthCheckPath: /api/health
+    disk:
+      name: marketing-storage
+      mountPath: /app/storage
+      sizeGB: 1
+    envVars:
+      - key: STORAGE_DIR
+        value: /app/storage
+      - key: PORT
+        value: 10000
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: LLM_DAILY_CALL_LIMIT
+        value: 120

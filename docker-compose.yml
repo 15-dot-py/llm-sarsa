@@ -1,0 +1,14 @@
+services:
+  platform:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      STORAGE_DIR: /app/storage
+      PORT: 8000
+    volumes:
+      - marketing_storage:/app/storage
+    restart: unless-stopped
+volumes:
+  marketing_storage:

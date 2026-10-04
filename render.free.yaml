@@ -1,0 +1,29 @@
+# Cloud-hosted demonstration. SQLite and model updates are ephemeral on Free.
+services:
+  - type: web
+    name: shenmou-marketing
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: bash scripts/render-build.sh
+    startCommand: python -m scripts.serve
+    healthCheckPath: /api/health
+    envVars:
+      - key: STORAGE_DIR
+        value: /opt/render/project/src/storage
+      - key: HOST
+        value: 0.0.0.0
+      - key: NEXT_TELEMETRY_DISABLED
+        value: '1'
+      - key: OMP_NUM_THREADS
+        value: '1'
+      - key: MKL_NUM_THREADS
+        value: '1'
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: LLM_PROVIDER
+        value: auto
+      - key: LLM_DAILY_CALL_LIMIT
+        value: '120'
+      - key: LLM_ENABLED
+        value: 'false'

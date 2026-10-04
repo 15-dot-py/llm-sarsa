@@ -16,6 +16,11 @@ export interface State { vector: number[]; factors: Factor[]; signature: string;
 export interface Quality { rows: number; days: number; start: string; end: string; label: string; source: string; warnings: string[]; estimates: string[]; cost_method: string; encoding: string; latest_result_source?: string; }
 export interface Bias { name: string; label: string; score: Num; status: string; evidence: unknown[]; interpretation: string; }
 export interface Profile { name: string; label: string; weights: Record<string, number>; version: string; }
+export interface RewardCatalog {
+  version: string; normalization: string; formula: string; weight_rule: string; boundary: string;
+  factors: {name:string;label:string;formula:string;note:string;sign:number;lower:number;upper:number}[];
+  profiles: (Profile & {raw_weights:Record<string,number>})[];
+}
 export interface LLMStatus { available: boolean; mode: string; model: string; calls_today: number; daily_limit: number; }
 export interface Dashboard { metrics: Metrics; series: Metrics[]; quality: Quality; state: State; bias: Bias[]; llm: LLMStatus; training_status: string; model_version: string; active_decision: Decision | null; profiles: Profile[]; }
 export interface Importance { name: string; label: string; permutation_mean: number; permutation_std: number; spearman: Num; q_sensitivity: Num; present: boolean; }

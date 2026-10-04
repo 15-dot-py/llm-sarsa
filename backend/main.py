@@ -15,6 +15,7 @@ from decision_models.library import create_library
 from database.store import dumps
 from llm.service import LLMService
 from backend.access import access_info
+from reward.catalog import reward_catalog
 
 def create_app(platform=None):
     platform=platform or Platform()
@@ -72,6 +73,8 @@ def create_app(platform=None):
     def access(): return access_info()
     @app.get('/api/dashboard')
     def dashboard(sid=Depends(session_id)): return platform.dashboard(sid)
+    @app.get('/api/reward')
+    def reward_definition(sid=Depends(session_id)): return reward_catalog()
     @app.get('/api/data')
     def dataset(sid=Depends(session_id)):
         s=platform.store.session(sid)

@@ -17,6 +17,27 @@ def decision(client,headers):
     assert r.status_code==200,r.text
     return r.json()
 
+def test_reward_catalog_matches_scoring_and_current_goal(setup):
+    from reward.engine import REWARD_KEYS, BOUNDS, PROFILES, RewardEngine
+    p,c,sid,h=setup
+    assert c.get('/api/reward').status_code==401
+    response=c.get('/api/reward',headers=h)
+    assert response.status_code==200
+    catalog=response.json()
+    assert [f['name'] for f in catalog['factors']]==REWARD_KEYS
+    assert len([f for f in catalog['factors'] if f['sign']==1])==7
+    assert len([f for f in catalog['factors'] if f['sign']==-1])==5
+    goal=next(x for x in catalog['profiles'] if x['name']=='inventory_clearance')
+    assert goal['weights']['inventory_turnover']==pytest.approx(.24)
+    assert goal['weights']['inventory_pressure']==pytest.approx(.20)
+    metrics=c.get('/api/dashboard',headers=h).json()['metrics']
+    score=RewardEngine().calculate(metrics,PROFILES[goal['name']])
+    for f,term,bounds in zip(catalog['factors'],score['contributions'],BOUNDS):
+        assert (f['lower'],f['upper'])==bounds
+        assert f['sign']==term['sign']
+        assert goal['weights'][f['name']]==term['weight']
+    assert '不同来源' in catalog['factors'][-1]['note']
+
 def test_feedback_loop_exact_confirmed_action_idempotence(setup):
     p,c,sid,h=setup; d=decision(c,h)
     assert d['decision_source']=='Deep SARSA'

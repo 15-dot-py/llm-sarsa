@@ -1,0 +1,1 @@
+.row{display:flex;align-items:center;justify-content:space-between;gap:16rpx}.time{color:#6f7d94;font-size:20rpx;max-width:60%;text-align:right}.action{font-size:30rpx;font-weight:700;color:#efd18d;margin:20rpx 0 10rpx}.question{margin-bottom:14rpx}

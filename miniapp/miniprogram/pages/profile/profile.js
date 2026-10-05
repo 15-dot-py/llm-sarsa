@@ -1,0 +1,1 @@
+const api=require("../../services/api");Page({data:{maskedPhone:"未登录"},onShow(){const p=api.phone();if(!api.sessionId()){wx.reLaunch({url:"/pages/login/login"});return}this.setData({maskedPhone:p?p.slice(0,3)+"****"+p.slice(-4):"已登录"})},logout(){api.clearLogin();wx.reLaunch({url:"/pages/login/login"})}});

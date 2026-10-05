@@ -1,0 +1,1 @@
+module.exports={apiBase:"https://shenmou-marketing.onrender.com",cloudbaseEnv:"REPLACE_WITH_CLOUDBASE_ENV",cloudbaseRegion:"ap-shanghai",publishableKey:""};

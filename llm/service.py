@@ -111,7 +111,9 @@ class LLMService:
             result=client.chat.completions.create(model=settings['model'],
                 messages=[{'role':'system','content':instructions},{'role':'user','content':json.dumps(payload,ensure_ascii=False)}],
                 response_format={'type':'json_schema','json_schema':{'name':schema.__name__,'strict':True,'schema':schema.model_json_schema()}},
-                max_tokens=2000,extra_body={'provider':{'require_parameters':True,'max_price':{'prompt':0,'completion':0,'request':0}}})
+                # Optional reasoning can exhaust the budget before emitting the required JSON.
+                max_tokens=2000,extra_body={'reasoning':{'enabled':False},
+                    'provider':{'require_parameters':True,'max_price':{'prompt':0,'completion':0,'request':0}}})
             if not result.choices or result.choices[0].finish_reason!='stop':raise RuntimeError('免费模型输出未完整结束')
             content=result.choices[0].message.content
             if not content:raise RuntimeError('免费模型未返回 JSON 内容')

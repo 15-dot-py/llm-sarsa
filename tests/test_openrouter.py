@@ -51,6 +51,7 @@ def test_free_route_uses_zero_price_and_records_actual_response_model(free_llm,m
     assert request['response_format']['json_schema']['strict'] is True
     assert request['extra_body']['provider']['max_price']=={'prompt':0,'completion':0,'request':0}
     assert request['extra_body']['provider']['require_parameters'] is True
+    assert request['extra_body']['reasoning']=={'enabled':False}
     assert calls[0]['settings']['base_url']=='https://openrouter.ai/api/v1'
     status=free_llm.status()
     assert status['last_used_model']==out['model'] and status['last_success_at']
@@ -101,7 +102,7 @@ def test_missing_free_key_never_uses_old_openai_credentials(monkeypatch):
 
 
 def test_free_pipeline_retains_sarsa_action_and_budget_constraint(tmp_path,free_llm,monkeypatch):
-    sdk(monkeypatch)
+    calls=sdk(monkeypatch)
     platform=Platform(tmp_path);sid=platform.new_session()['session_id']
     out=platform.decide(sid,DecisionInput(question='流量下降，如何提高销售收入？不要增加淘宝预算。',reward_profile='auto'))
     assert out['decision_source']=='Deep SARSA'
@@ -110,6 +111,7 @@ def test_free_pipeline_retains_sarsa_action_and_budget_constraint(tmp_path,free_
     assert out['explanation']['selected_action']==out['action_name']
     assert not next(q for q in out['q_values'] if q['name']=='increase_new_customer_acquisition')['legal']
     assert out['action_name']!='increase_new_customer_acquisition'
+    assert all(call['request']['extra_body']['reasoning']=={'enabled':False} for call in calls)
 
 
 def test_free_explanation_cannot_change_selected_action(free_llm,monkeypatch):

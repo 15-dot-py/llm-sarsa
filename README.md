@@ -8,9 +8,9 @@
 
 企业证据表包含三只松鼠 2025 年年报、2026 年半年报和 AI 评价管理公开案例，共 10 条来源记录。问题检索结果保存到决策记录并提供给解释层。另提供 60 天 × 5 渠道合成运营数据、预训练 checkpoint、实际训练曲线与对照结果。
 
-已通过 38 项 Python 测试、前端 TypeScript 检查和生产构建。改版后的浏览器闭环与手机布局检查见 [本地验收记录](docs/verification.md)，现场操作见 [展示流程](docs/demo-guide.md)。
+已通过 50 项 Python 测试、前端 TypeScript 检查和生产构建。改版后的浏览器闭环与手机布局检查见 [本地验收记录](docs/verification.md)，现场操作见 [展示流程](docs/demo-guide.md)。
 
-**公开企业资料有真实来源，日级 CSV 是合成示例，不是三只松鼠内部数据。** 无 API 密钥时，页面显示“未接入 LLM / 模板解释”。两个 LLM 实验组显示未运行。后端支持 OpenAI 与 DeepSeek；配置密钥不等于已验证实际调用。GitHub 与 Render 连接已核实，源码仓库为 `15-dot-py/llm-sarsa`。云端发布与外网验收结果见部署记录。
+**公开企业资料有真实来源，日级 CSV 是合成示例，不是三只松鼠内部数据。** 无 API 密钥时，页面显示“未接入 LLM / 模板解释”。两个 LLM 实验组显示未运行。后端支持 OpenAI、DeepSeek 与 OpenRouter 免费模型；配置密钥不等于已验证实际调用。GitHub 与 Render 连接已核实，源码仓库为 `15-dot-py/llm-sarsa`。云端发布与外网验收结果见部署记录。
 
 ## 云端网站部署
 
@@ -70,7 +70,7 @@ flowchart TD
   U --> Q
 ```
 
-- **LLM**：提取定性业务信号及原文证据；解释已经确定的动作。OpenAI 使用 Responses API 与 Structured Outputs，DeepSeek 使用 JSON Output 与本地严格结构校验。提取结构不含动作字段，解释动作与模型动作不一致时拒绝解释并使用模板。密钥只在后端配置。
+- **LLM**：提取定性业务信号及原文证据；解释已经确定的动作。OpenAI 使用 Responses API 与 Structured Outputs，DeepSeek 使用 JSON Output 与本地严格结构校验，OpenRouter 免费接口使用 Chat Completions、JSON Schema 与本地严格结构校验。提取结构不含动作字段，解释动作与模型动作不一致时拒绝解释并使用模板。密钥只在后端配置。
 - **Factor Engine**：登记定义、量纲、范围、来源、缺失情况和可控性；构建状态。文本不会覆盖实测库存、CAC 等经营指标；未观测外部变量可以接收明确标注的语义映射。
 - **Deep SARSA**：读取状态、计算 18 个 Q 值、执行约束屏蔽并选择合法动作。建议使用贪心策略，仿真训练使用 epsilon-greedy。
 - **Reward Engine**：把不同量纲指标标准化，再按经营目标计算正负贡献。权重进入状态末尾，目标变化有明确上下文。
@@ -203,6 +203,23 @@ date,sales,revenue,advertising_cost,impressions,clicks,orders,new_customers,retu
 
 无法观测的分母为零时，转化、回流等比率保持未知，而非编造为实测零。没有完整管理费、税费等数据，不能称净利润。
 
+## OpenRouter 免费 API 配置
+
+先在 [OpenRouter 官方密钥页面](https://openrouter.ai/settings/keys) 登录本人账号并创建密钥。免费接口也需要账号密钥；GitHub / Render 连接本身不提供模型推理权限。
+
+```dotenv
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=在本机或 Render 环境变量填写
+OPENROUTER_MODEL=openrouter/free
+LLM_TIMEOUT=45
+LLM_ENABLED=true
+LLM_DAILY_CALL_LIMIT=50
+```
+
+`openrouter/free` 只路由到免费模型，并根据 JSON Schema 等请求能力筛选模型。本项目同时将输入、输出及单次请求价格上限设为零；免费模型不可用时会明确回退到规则和模板，不改用付费模型。只有实际模型响应通过结构和动作一致性校验，记录才标注 `LLM`，并保存服务返回的具体模型名称。
+
+[官方免费方案](https://openrouter.ai/pricing)目前为每天 50 次 API 请求；系统每天按 UTC 计数，OpenRouter 配置下上限不超过 50。一次完整决策通常调用两次（提取和解释），因此不等于每天 50 次完整决策。免费模型的速率、可用性和延迟会变化，详见[免费路由说明](https://openrouter.ai/docs/guides/routing/routers/free-router)。账号认证和真实公网调用通过之前，页面保留“待配置密钥”或“待实际调用验证”，不把接口契约测试写成上线成功。
+
 ## OpenAI API 配置
 
 在项目根目录 `.env` 设置 `OPENAI_API_KEY`、`OPENAI_MODEL`。默认可配置模型为 `gpt-4.1-mini`；具体账号可用性需实际验证。**密钥不能放进前端，也不要上传到 GitHub。** 更改 `.env` 后重启后端。
@@ -214,7 +231,7 @@ OPENAI_TIMEOUT=20
 LLM_DAILY_CALL_LIMIT=120
 ```
 
-调用使用 OpenAI 官方 Structured Outputs 接口，Pydantic 校验；拒绝越界语义信号、空解析结果和动作不匹配解释，超时按明确 fallback 处理。[官方接口说明](https://developers.openai.com/api/docs/guides/structured-outputs)。当前没有有效密钥，已测试接口契约和失败处理，尚未验证真实在线 LLM 调用。
+调用使用 OpenAI 官方 Structured Outputs 接口，Pydantic 校验；拒绝越界语义信号、空解析结果和动作不匹配解释，超时按明确 fallback 处理。[官方接口说明](https://developers.openai.com/api/docs/guides/structured-outputs)。实际使用情况以当前页面及每条记录的调用来源为准，配置密钥不代表已通过真实调用验证。
 
 ## 安装与开发
 

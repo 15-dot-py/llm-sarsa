@@ -19,7 +19,7 @@ from reward.catalog import reward_catalog
 
 def create_app(platform=None):
     platform=platform or Platform()
-    app=FastAPI(title='深谋远虑 · 营销决策平台',version='1.0.0',docs_url='/api/docs')
+    app=FastAPI(title='深谋远虑 · 营销决策平台',version='1.1.1',docs_url='/api/docs')
     app.state.platform=platform
     buckets=defaultdict(deque); rate_lock=threading.Lock()
     @app.middleware('http')
@@ -64,7 +64,7 @@ def create_app(platform=None):
             raise HTTPException(403,'公网训练需配置 ADMIN_TOKEN')
 
     @app.get('/api/health')
-    def health(): return {'status':'ok','algorithm':'Deep SARSA','llm_available':platform.llm.available,'version':'1.1.0'}
+    def health(): return {'status':'ok','algorithm':'Deep SARSA','llm_available':platform.llm.available,'version':'1.1.1'}
     @app.post('/api/session')
     def new_session(): return platform.new_session()
     @app.get('/api/company')

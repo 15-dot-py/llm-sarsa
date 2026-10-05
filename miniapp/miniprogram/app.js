@@ -1,0 +1,1 @@
+App({globalData:{brand:"深谋远虑"}});

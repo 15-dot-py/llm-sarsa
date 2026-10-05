@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse,FileResponse,Response
 from fastapi.staticfiles import StaticFiles
 from backend.service import Platform,BusinessError
 from backend.schemas import DecisionInput,ExecuteInput,FeedbackInput,TrainInput
+from backend.miniapp_auth import cloudbase_user,authenticated_session
 from config.settings import ROOT,DATA_PATH
 from decision_models.library import create_library
 from database.store import dumps
@@ -67,6 +68,9 @@ def create_app(platform=None):
     def health(): return {'status':'ok','algorithm':'Deep SARSA','llm_available':platform.llm.available,'version':'1.1.1'}
     @app.post('/api/session')
     def new_session(): return platform.new_session()
+    @app.post('/api/auth/session')
+    async def new_authenticated_session(uid=Depends(cloudbase_user)):
+        return {**authenticated_session(platform,uid),'user_id':uid}
     @app.get('/api/company')
     def company(): return {**platform.company_profile,'records':platform.store.company_evidence()}
     @app.get('/api/access')

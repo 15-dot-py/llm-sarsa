@@ -8,7 +8,7 @@ REQUIRED=['date','sales','revenue','advertising_cost','impressions','clicks','or
           'new_customers','returning_customers','channel','price','discount','promotion_cost','inventory','returns']
 NUMERIC=[x for x in REQUIRED if x not in {'date','channel'}]
 
-def process_csv(blob: bytes,source='uploaded'):
+def process_csv(blob: bytes,source='uploaded',min_rows=10):
     if len(blob)>2*1024*1024: raise ValueError('CSV 最大 2 MB')
     text=None; encoding=''
     for enc in ['utf-8-sig','gb18030']:
@@ -20,7 +20,7 @@ def process_csv(blob: bytes,source='uploaded'):
     df.columns=df.columns.str.strip()
     missing=sorted(set(REQUIRED)-set(df.columns))
     if missing: raise ValueError('缺少必填列：'+', '.join(missing))
-    if not 10<=len(df)<=9000: raise ValueError('至少 10 行，最多 9000 行数据')
+    if not min_rows<=len(df)<=9000: raise ValueError(f'至少 {min_rows} 行，最多 9000 行数据')
     df=df.copy()
     try: dates=pd.to_datetime(df['date'],errors='raise',format='mixed')
     except Exception: raise ValueError('date 必须为有效日期，建议 YYYY-MM-DD') from None
@@ -28,7 +28,9 @@ def process_csv(blob: bytes,source='uploaded'):
     df['channel']=df['channel'].astype(str).str.strip()
     if not set(df.channel).issubset(CHANNELS): raise ValueError('渠道限定为：'+', '.join(CHANNELS))
     if df.duplicated(['date','channel']).any(): raise ValueError('同一日期、渠道只能一行；请先汇总，库存按渠道分仓填写')
-    optional=[x for x in ['cogs','return_loss','unit_cost','list_price','forecast_revenue'] if x in df]
+    optional_names=['cogs','return_loss','unit_cost','list_price','forecast_revenue']
+    df=df.drop(columns=[x for x in optional_names if x in df and df[x].isna().all()])
+    optional=[x for x in optional_names if x in df]
     for col in NUMERIC+optional:
         df[col]=pd.to_numeric(df[col],errors='coerce')
         if df[col].isna().any() or not np.isfinite(df[col].to_numpy()).all(): raise ValueError(f'{col} 存在空值或非法数字')

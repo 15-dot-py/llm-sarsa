@@ -14,7 +14,7 @@ export interface Factor {
   provenance: string; source: string; clipped: boolean; controllable: boolean; lag: number;
 }
 export interface State { vector: number[]; factors: Factor[]; signature: string; state_dim: number; coverage: number; layout: string; }
-export interface Quality { rows: number; days: number; start: string; end: string; label: string; source: string; warnings: string[]; estimates: string[]; cost_method: string; encoding: string; latest_result_source?: string; }
+export interface Quality { rows: number; days: number; start: string; end: string; label: string; source: string; warnings: string[]; estimates: string[]; cost_method: string; encoding: string; latest_result_source?: string; revision?:number; content_hash?:string; updated_at?:string; current_source?:string; }
 export interface Bias { name: string; label: string; score: Num; status: string; evidence: unknown[]; interpretation: string; }
 export interface Profile { name: string; label: string; weights: Record<string, number>; version: string; }
 export interface RewardCatalog {
@@ -36,6 +36,7 @@ export interface Update { loss: number; q_before: number; target: number; bootst
 export interface Transition { state: number[]; action: number; reward: number; next_state: number[]; next_action: number | null; next_action_name?: string; next_action_confirmed: boolean; source: string; terminal: boolean; update?: Update; model_version_after?: string; }
 export interface Explanation { selected_action: string; source: string; model?: string | null; provider?: string; summary: string; reasons: string[]; watch_metrics: string[]; limitations: string[]; fallback_reason: string | null; }
 export interface Decision {
+  data_context?:{revision:number;content_hash:string|null;observed_date:string;source:string};
   stability_audit?:{selection:string;q_gap:Num;alternative_action:string|null;semantic_reused:boolean;previous_model_version:string|null;note:string};
   input_audit?: {used_signals:{name:string;description:string;value:Num}[];business_claims:Record<string,string>;data_source:string;note:string;goal_source?:string;explicit_constraints?:string[]};
   company_evidence?: CompanyEvidence[];
@@ -57,7 +58,9 @@ export interface ExperimentGroup { name: string; status: string; reason?: string
 export interface Experiments { groups: ExperimentGroup[]; ablations: { group: string; masked_factors: string[]; reward: number; difference_from_full: number; method: string; }[]; source: string; test_seeds: number[]; horizon: number; semantic_boundary: string; }
 export interface TrainingReport { curves: Curve[]; algorithm: string; source: string; config: Record<string, number | string>; before_after?: { before: Summary; after: Summary; source: string; }; }
 export interface Lab { training: TrainingReport | null; experiments: Experiments | null; importance: FactorAnalysis; updates: number; model_version: string; network: string; epsilon: number; config: Record<string, number | string>; current_state: State; recent_transitions: Transition[]; }
-export interface Dataset { rows: Record<string, string | number>[]; daily: Metrics[]; current: Metrics; quality: Quality; state: State; registry: Factor[]; }
+export interface DataRevision {revision:number;updated_at:string;source:string;note:string;observation_date:string;rows:number;added_rows?:number;corrected_rows?:number;}
+export interface DataPreview {preview_token:string;expires_in:number;changes:{added_rows:number;corrected_rows:number;unchanged_rows:number;replaced_demo:boolean;incoming_dates:string[]};before:{quality:Quality;metrics:Metrics};after:{quality:Quality;metrics:Metrics};warnings:string[];active_status:string|null;feedback_allowed:boolean;blocked:boolean;}
+export interface Dataset { rows: Record<string, string | number>[]; daily: Metrics[]; current: Metrics; quality: Quality; state: State; registry: Factor[]; revisions?:DataRevision[]; }
 export interface LibraryComponent { name: string; label: string; description: string; source_file: string; output: unknown; implemented: boolean; }
 export interface CompanyEvidence { id:string;period:string;metric:string;value:Num;previous:Num;unit:string;kind:string;note:string;source_title:string;source_url:string;page:number|null;published:string;retrieval_score?:number; }
 export interface CompanyProfile { company:string;stock_code:string;verified_on:string;boundary:string;records:CompanyEvidence[]; }

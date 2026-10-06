@@ -5,12 +5,14 @@ import time
 import threading
 from collections import defaultdict,deque
 from pathlib import Path
-from fastapi import FastAPI,Depends,Header,HTTPException,UploadFile,File,Request
+from fastapi import FastAPI,Depends,Header,HTTPException,UploadFile,File,Form,Request
 from fastapi.responses import JSONResponse,FileResponse,Response
 from pydantic import BaseModel, Field, ConfigDict
 from fastapi.staticfiles import StaticFiles
 from backend.service import Platform,BusinessError
-from backend.schemas import DecisionInput,ExecuteInput,FeedbackInput,TrainInput
+from backend.schemas import DecisionInput,ExecuteInput,FeedbackInput,TrainInput,DataRowsInput,DataApplyInput
+from data.updates import csv_from_rows
+from data.processing import REQUIRED
 from config.settings import ROOT,DATA_PATH
 from decision_models.library import create_library
 from database.store import dumps
@@ -41,7 +43,7 @@ class RecoveryArchive(BaseModel):
 
 def create_app(platform=None,auth=None):
     platform=platform or Platform()
-    app=FastAPI(title='深谋远虑 · 营销决策平台',version='1.1.1',docs_url='/api/docs')
+    app=FastAPI(title='深谋远虑 · 营销决策平台',version='1.2.0',docs_url='/api/docs')
     app.state.platform=platform
     auth=auth or PhoneAuth(platform);app.state.auth=auth;wechat=WechatCode();backup=WorkspaceBackup(platform,auth)
     buckets=defaultdict(deque); rate_lock=threading.Lock()
@@ -108,7 +110,7 @@ def create_app(platform=None,auth=None):
             raise HTTPException(403,'公网训练需配置 ADMIN_TOKEN')
 
     @app.get('/api/health')
-    def health(): return {'status':'ok','algorithm':'Deep SARSA','llm_available':platform.llm.available,'version':'1.1.1'}
+    def health(): return {'status':'ok','algorithm':'Deep SARSA','llm_available':platform.llm.available,'version':'1.2.0','data_updates':'incremental'}
     @app.post('/api/session')
     def new_session(request:Request):
         user=optional_user(request);value=platform.new_session()
@@ -156,6 +158,22 @@ def create_app(platform=None,auth=None):
         s=platform.store.session(sid)
         return {**s['dataset'],'state':platform.factors.build(s['metrics'],__import__('reward').PROFILES['balanced_growth'],bias={x['name']:x['score'] for x in platform.bias.analyze(s['dataset']['daily'])}),
                 'registry':platform.factors.registry.list()}
+    @app.post('/api/data/preview')
+    def preview_rows(body:DataRowsInput,sid=Depends(session_id)):
+        return platform.preview_data(sid,csv_from_rows(body.rows),body.source,body.note)
+    @app.post('/api/data/preview-upload')
+    async def preview_upload(file:UploadFile=File(...),source:str=Form('uploaded'),note:str=Form('CSV 增量更新'),sid=Depends(session_id)):
+        blob=await file.read(2097153)
+        if len(blob)>2097152:raise HTTPException(413,'CSV 最大 2 MB')
+        if not (file.filename or '').lower().endswith('.csv'):raise HTTPException(422,'仅支持 CSV 文件')
+        return platform.preview_data(sid,blob,source,note)
+    @app.post('/api/data/apply')
+    def apply_data(body:DataApplyInput,sid=Depends(session_id)):
+        return platform.apply_data(sid,body.preview_token,body.as_feedback,body.terminal)
+    @app.get('/api/data/template.csv')
+    def data_template():
+        return Response(('\ufeff'+','.join(REQUIRED+['cogs','return_loss'])+'\r\n').encode('utf-8'),media_type='text/csv',
+                        headers={'Content-Disposition':'attachment; filename=operations-template.csv'})
     @app.post('/api/data/upload')
     async def upload(file:UploadFile=File(...),sid=Depends(session_id)):
         blob=await file.read(int(os.getenv('MAX_UPLOAD_BYTES','2097152'))+1)

@@ -8,7 +8,7 @@
 
 企业证据表包含三只松鼠 2025 年年报、2026 年半年报和 AI 评价管理公开案例，共 10 条来源记录。问题检索结果保存到决策记录并提供给解释层。另提供 60 天 × 5 渠道合成运营数据、预训练 checkpoint、实际训练曲线与对照结果。
 
-已通过 50 项 Python 测试、前端 TypeScript 检查和生产构建。改版后的浏览器闭环与手机布局检查见 [本地验收记录](docs/verification.md)，现场操作见 [展示流程](docs/demo-guide.md)。
+增量数据更新版的 Python 回归、前端 TypeScript 检查和生产构建均已通过；验收范围与接口结果见 [数据更新说明](docs/data-updates-and-comparison.md) 和对应验收记录。此前的浏览器闭环与手机布局记录见 [本地验收记录](docs/verification.md)，现场操作见 [展示流程](docs/demo-guide.md)。
 
 **公开企业资料有真实来源，日级 CSV 是合成示例，不是三只松鼠内部数据。** 无 API 密钥时，页面显示“未接入 LLM / 模板解释”。两个 LLM 实验组显示未运行。后端支持 OpenAI、DeepSeek 与 OpenRouter 免费模型；配置密钥不等于已验证实际调用。GitHub 与 Render 连接已核实，源码仓库为 `15-dot-py/llm-sarsa`。云端发布与外网验收结果见部署记录。
 
@@ -16,7 +16,13 @@
 
 Render Python 原生运行环境使用 `bash scripts/render-build.sh` 构建前端及 Python 依赖，使用 `python -m scripts.serve` 启动一个完整的同源服务。健康检查路径为 `/api/health`，网站分享地址自动读取 Render 的 `RENDER_EXTERNAL_URL`，无需在代码里写死域名。云端服务与当前电脑的运行状态无关。
 
-`render.free.yaml` 为免费云端演示配置，后台实际运行 PyTorch Deep SARSA。免费实例 15 分钟无访问后休眠，重启、重新部署和休眠会丢失本地 SQLite 记录、上传数据与在线模型更新；该配置适合邀请试用，不能作为持久数据保存方案。`render.yaml` 为收费实例与持久磁盘配置，启用前须确认费用。限制依据：[Render 免费服务文档](https://render.com/docs/free)。
+`render.free.yaml` 为免费云端演示配置，后台实际运行 PyTorch Deep SARSA。免费实例 15 分钟无访问后休眠，重启、重新部署和休眠会丢失实例本地 SQLite 记录、上传数据与在线模型更新。现有签名浏览器备份可以尝试恢复完整工作区，也可导出后在另一设备导入；它不等于永久云数据库，详见 [恢复机制](docs/workspace-recovery.md)。`render.yaml` 为收费实例与持久磁盘配置。限制依据：[Render 免费服务文档](https://render.com/docs/free)。
+
+## 基于新数据决策
+
+工作台“更新数据”支持新增记录、编辑已有记录和增量 CSV。保存前会预览新增/修正行数、最新观察日和指标变化；同日同渠道更新而不重复追加。保存后下一次建议读取最新观测，每条决策保留数据版本与当时快照。首次真实导入移出合成样例，测试上传始终标明来源。
+
+新观测不会自动触发学习。已有执行动作时，需明确把新增一个后续观察日作为经营反馈；SARSA 仍在下一实际动作确认后更新，终止周期按终止转移更新。自动获得企业内部数据需要授权源，当前提供手工录入、CSV 及工作区级接入接口。操作说明及 Metabase、NocoDB、Langfuse、Meridian、Albert 的产品对照见 [数据更新与产品比较](docs/data-updates-and-comparison.md)。
 
 ## 直接运行（当前电脑）
 

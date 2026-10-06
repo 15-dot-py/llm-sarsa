@@ -2,7 +2,9 @@ from dataclasses import asdict
 from datetime import datetime,timezone,timedelta
 import hashlib
 import json
+import os
 import secrets
+import time
 import threading
 import uuid
 import numpy as np
@@ -19,6 +21,8 @@ from decision_models.actions import CHANNELS
 from decision_models.library import create_library
 from data import process_csv
 from data.generate import generate_sample
+from data.updates import prepare_update,stamp
+from backend.schemas import FeedbackInput
 from bias_engine import BiasEngine
 from llm import LLMService
 from llm.intent import marketing_question,infer_goal,explicit_constraints
@@ -42,7 +46,8 @@ class Platform:
         self.base_id=hashlib.sha256(self.base.to_bytes()).hexdigest()[:10]
         manifest=ROOT/'data'/'training_report.json'
         self.base_report=json.loads(manifest.read_text(encoding='utf-8')) if manifest.exists() else None
-        self.jobs={}; self.training_gate=threading.Lock()
+        self.jobs={}; self.training_gate=threading.Lock(); self.data_previews={}
+        self.preview_limit=max(1,min(16,int(os.getenv('MAX_DATA_PREVIEWS','8'))))
         if not DATA_PATH.exists(): generate_sample(DATA_PATH)
 
     def _engine_for(self,agent):
@@ -73,6 +78,9 @@ class Platform:
 
     def new_session(self):
         dataset=process_csv(DATA_PATH.read_bytes(),'demo'); sid=secrets.token_urlsafe(32)
+        for row in dataset['rows']:row['observation_source']='demo';row['cost_method']=dataset['current']['cost_method']
+        for day in dataset['daily']:day['observation_source']='demo'
+        stamp(dataset,'demo','初始合成演示数据')
         config={'base_id':self.base_id,'training_status':'预训练' if self.base.updates else '未训练初始化',
                 'version':'platform-v1','constraints':asdict(ActionConstraints())}
         with self.store.connect() as c:
@@ -120,9 +128,82 @@ class Platform:
         with self.lock,self.store.connect() as c:
             s=self.store.session(sid,c)
             if s['active_decision']: raise BusinessError('先完成当前决策周期，再更换数据')
+            for row in dataset['rows']:row['observation_source']=source
+            for day in dataset['daily']:day['observation_source']=source
+            stamp(dataset,source,'整批替换数据',s['dataset'])
             c.execute('UPDATE sessions SET dataset=?,metrics=?,updated=? WHERE id=?',
                       (dumps(dataset),dumps(dataset['current']),now(),sid))
         return {'quality':dataset['quality'],'current':dataset['current']}
+
+    def preview_data(self,sid,blob,source='uploaded',note='更新运营数据'):
+        if source not in {'uploaded','manual','demo_upload'}:raise ValueError('数据来源不合法')
+        if len(note)>200:raise ValueError('更新说明最多 200 字')
+        incoming=process_csv(blob,source,min_rows=1)
+        for row in incoming['rows']:row['cost_method']=incoming['current']['cost_method']
+        with self.lock:
+            s=self.store.session(sid)
+            dataset,changes=prepare_update(s['dataset'],incoming,source,note)
+            tick=time.monotonic()
+            for token,plan in list(self.data_previews.items()):
+                if tick-plan['created']>600:del self.data_previews[token]
+            while len(self.data_previews)>=self.preview_limit:
+                del self.data_previews[next(iter(self.data_previews))]
+            token=secrets.token_urlsafe(32)
+            active=self.store.decision(sid,s['active_decision']) if s['active_decision'] else None
+            new_dates=[date for date in changes['incoming_dates'] if date>s['metrics']['date']]
+            feedback_allowed=bool(active and active['status']=='executed' and len(new_dates)==1 and
+                                  dataset['current']['date']==new_dates[0] and not changes['replaced_demo'])
+            blocked=bool(active and active['parent_decision'] and active['status']=='draft')
+            self.data_previews[token]={'sid':sid,'created':tick,'base_updated':s['updated'],
+                                      'dataset':dataset,'changes':changes,'source':source,'note':note,
+                                      'feedback_allowed':feedback_allowed}
+            warnings=list(dataset['quality']['warnings'])
+            if changes['replaced_demo']:warnings.append('首次导入真实观测将移出合成演示数据；旧决策的观测快照仍保留')
+            if source=='demo_upload':warnings.append('本次更新标记为合成/测试数据，不作为企业实际业绩')
+            return {'preview_token':token,'expires_in':600,'changes':changes,
+                    'before':{'quality':s['dataset']['quality'],'metrics':s['metrics']},
+                    'after':{'quality':dataset['quality'],'metrics':dataset['current']},
+                    'warnings':warnings,'active_status':active['status'] if active else None,
+                    'feedback_allowed':feedback_allowed,'blocked':blocked}
+
+    def apply_data(self,sid,token,as_feedback=False,terminal=False):
+        with self.lock:
+            s=self.store.session(sid)
+            if s['dataset']['quality'].get('last_applied_token')==token:
+                return {**s['dataset']['quality']['last_apply_receipt'],'idempotent':True}
+            plan=self.data_previews.get(token)
+            if not plan or plan['sid']!=sid or time.monotonic()-plan['created']>600:
+                raise BusinessError('预览已失效，请重新预览后保存')
+            if plan['base_updated']!=s['updated']:raise BusinessError('预览后工作区已变化，请重新预览，避免覆盖新记录')
+            active=self.store.decision(sid,s['active_decision']) if s['active_decision'] else None
+            if active and active['status']=='draft' and active['parent_decision']:
+                raise BusinessError('上一轮正在等待下一实际动作。请先确认执行或结束周期，再更新观测')
+            if active and active['status']=='executed' and not as_feedback:
+                raise BusinessError('当前动作已经执行。请选择将新增一天的观测作为本轮经营反馈；不能跳过执行结果')
+            if as_feedback and not (active and plan['feedback_allowed']):
+                raise BusinessError('经营反馈须对应已确认的动作，且只新增一个后续观察日；真实观测不能与初始合成数据组成训练转移')
+            if terminal and not as_feedback:raise BusinessError('仅经营反馈可结束学习周期')
+            dataset=json.loads(dumps(plan['dataset']))
+            receipt={'revision':dataset['quality']['revision'],'observed_date':dataset['current']['date'],
+                     'feedback_saved':as_feedback,'cancelled_draft':active['id'] if active and active['status']=='draft' else None,
+                     'idempotent':False}
+            dataset['quality'].update(last_applied_token=token,last_apply_receipt=receipt)
+            if as_feedback:
+                mode='simulation' if plan['source']=='demo_upload' else 'actual'
+                provenance={'source':mode,'label':'上传的合成/测试结果，非企业实际业绩' if mode=='simulation' else '用户提供渠道级经营结果，未独立审计',
+                            'method':'validated_channel_observations','incoming_dates':plan['changes']['incoming_dates']}
+                self.feedback(sid,active['id'],FeedbackInput(mode=mode,terminal=terminal),
+                              _observed=(dataset,dataset['current'],provenance,plan))
+            else:
+                stamp(dataset,plan['source'],plan['note'],s['dataset'],plan['changes'])
+                with self.store.connect() as c:
+                    if active:
+                        active['status']='cancelled';active['cancellation_reason']='观测数据已更新，旧草稿保留供核对'
+                        self.store.put_decision(sid,active,c)
+                    c.execute('UPDATE sessions SET dataset=?,metrics=?,active_decision=NULL,updated=? WHERE id=?',
+                              (dumps(dataset),dumps(dataset['current']),now(),sid))
+            del self.data_previews[token]
+            return receipt
 
     def _build_decision(self,s,question,profile,constraints,parent=None,agent=None):
         agent=agent or self._agent(s)
@@ -151,6 +232,9 @@ class Platform:
                    'note':'Q 差距较小时排名容易因状态或在线更新变化；Q 差距不是置信度或利润差。'}
         importance=evaluate_factors(history,agent)
         record={'id':str(uuid.uuid4()),'timestamp':now(),'status':'draft','question':question,
+                'data_context':{'revision':s['dataset']['quality'].get('revision',0),
+                                'content_hash':s['dataset']['quality'].get('content_hash'),
+                                'observed_date':s['metrics']['date'],'source':s['dataset']['quality']['label']},
                 'model_version':self.version(s,agent),'state_vector':state['vector'],'factor_values':state['factors'],
                 'factor_importance':importance,'factor_signature':state['signature'],'state_coverage':state['coverage'],
                 'action':action,'action_name':ACTIONS[action].name,'action_label':ACTIONS[action].label,
@@ -263,23 +347,37 @@ class Platform:
         return m,{'source':'actual','label':'用户填报实际结果；未填指标保持缺失，未审计',
                   'budget_source':'实际总投入按执行渠道比例分配' if ads is not None else '执行后预算计划，非实测投入'}
 
-    def feedback(self,sid,did,request):
+    def feedback(self,sid,did,request,_observed=None):
         with self.lock:
             s=self.store.session(sid); record=self.store.decision(sid,did)
             if record['user_feedback']:
-                if record['user_feedback']['request']!=request.model_dump(): raise BusinessError('该反馈已保存，不能改写已学习的经营结果')
+                saved={**record['user_feedback']['request'],'observed_date':record['user_feedback']['request'].get('observed_date')}
+                if saved!=request.model_dump(mode='json'): raise BusinessError('该反馈已保存，不能改写已学习的经营结果')
                 return {'decision':record,'next_decision':self.store.decision(sid,record['next_decision']) if record.get('next_decision') else None,'idempotent':True}
             if record['status']!='executed' or s['active_decision']!=did: raise BusinessError('先确认该策略已执行，再提交结果')
-            metrics,provenance=self._outcome(record,request); profile=profile_from_record(record)
-            metrics['date']=(datetime.fromisoformat(s['dataset']['daily'][-1]['date'])+timedelta(days=1)).date().isoformat()
+            previous=json.loads(dumps(s['dataset']))
+            if _observed:dataset,metrics,provenance,plan=_observed
+            else:
+                metrics,provenance=self._outcome(record,request);dataset=s['dataset']
+                metrics['date']=request.observed_date.isoformat() if request.observed_date else (datetime.fromisoformat(s['metrics']['date'])+timedelta(days=1)).date().isoformat()
+            if metrics['date']<=s['metrics']['date']:raise BusinessError('反馈观察日须晚于本轮决策使用的观察日')
+            profile=profile_from_record(record)
             if record['execution'].get('forecast_revenue') is not None: metrics['forecast_revenue']=record['execution']['forecast_revenue']
             for k in ['reason','reason_category','supporting_experiment','anchor_value','current_evidence_conflict']: metrics[k]=record['execution'].get(k)
             reward=self.reward.calculate(metrics,profile)
             record['actual_reward']=reward; record['user_feedback']={'rating':request.rating,'mode':request.mode,
-                       'provenance':provenance,'timestamp':now(),'request':request.model_dump()}
-            dataset=s['dataset']; dataset['daily'].append(metrics); dataset['current']=metrics
+                       'provenance':provenance,'timestamp':now(),'request':request.model_dump(mode='json')}
+            metrics['observation_source']=provenance['source']
+            if not _observed:dataset['daily'].append(metrics)
+            else:dataset['daily']=[metrics if day['date']==metrics['date'] else day for day in dataset['daily']]
+            dataset['current']=metrics
             dataset['quality']['latest_result_source']=provenance['label']
+            dataset['quality']['source']='demo' if provenance['source']=='simulation' else 'actual'
+            dataset['quality']['label']=provenance['label']
             dataset['quality']['latest_feedback_decision_id']=did
+            stamp(dataset,plan['source'] if _observed else provenance['source'],
+                  plan['note'] if _observed else '已确认动作的经营反馈',previous,
+                  plan['changes'] if _observed else None)
             record['outcome_metrics']=metrics
             s['metrics']=metrics; s['dataset']=dataset
             agent=self._agent(s)

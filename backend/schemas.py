@@ -1,4 +1,5 @@
 from typing import Literal
+from datetime import date
 from pydantic import BaseModel, Field, ConfigDict
 from reward import REWARD_KEYS
 
@@ -48,6 +49,17 @@ class FeedbackInput(StrictModel):
     rating: Literal['effective','neutral','ineffective']='neutral'
     mode: Literal['actual','simulation']='actual'
     outcome: OutcomeInput | None=None
+    terminal: bool=False
+    observed_date: date | None=None
+
+class DataRowsInput(StrictModel):
+    rows: list[dict[str,str|float|int|None]]=Field(min_length=1,max_length=9000)
+    source: Literal['manual','uploaded','demo_upload']='manual'
+    note: str=Field('更新运营数据',max_length=200)
+
+class DataApplyInput(StrictModel):
+    preview_token: str=Field(min_length=40,max_length=60,pattern=r'^[A-Za-z0-9_-]+$')
+    as_feedback: bool=False
     terminal: bool=False
 
 class TrainInput(StrictModel):

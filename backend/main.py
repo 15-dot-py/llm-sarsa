@@ -7,6 +7,7 @@ from collections import defaultdict,deque
 from pathlib import Path
 from fastapi import FastAPI,Depends,Header,HTTPException,UploadFile,File,Request
 from fastapi.responses import JSONResponse,FileResponse,Response
+from pydantic import BaseModel, Field, ConfigDict
 from fastapi.staticfiles import StaticFiles
 from backend.service import Platform,BusinessError
 from backend.schemas import DecisionInput,ExecuteInput,FeedbackInput,TrainInput
@@ -16,14 +17,34 @@ from database.store import dumps
 from llm.service import LLMService
 from backend.access import access_info
 from reward.catalog import reward_catalog
+from backend.phone_auth import PhoneAuth, COOKIE, PRIVACY_VERSION
+from backend.wechat_code import WechatCode
 
-def create_app(platform=None):
+class PhoneRequest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    phone: str=Field(pattern=r'^1[3-9]\d{9}$')
+    privacy_accepted: bool
+    privacy_version: str
+
+class PhoneVerify(PhoneRequest):
+    challenge_id: str=Field(min_length=40,max_length=60,pattern=r'^[A-Za-z0-9_-]+$')
+    code: str=Field(pattern=r'^\d{6}$')
+
+def create_app(platform=None,auth=None):
     platform=platform or Platform()
     app=FastAPI(title='深谋远虑 · 营销决策平台',version='1.1.1',docs_url='/api/docs')
     app.state.platform=platform
+    auth=auth or PhoneAuth(platform);app.state.auth=auth;wechat=WechatCode()
     buckets=defaultdict(deque); rate_lock=threading.Lock()
     @app.middleware('http')
     async def harden(request:Request,call_next):
+        if request.cookies.get(COOKIE) and request.method in {'POST','PUT','PATCH','DELETE'}:
+            origin=request.headers.get('origin')
+            from urllib.parse import urlsplit
+            expected={request.url.netloc, urlsplit(os.getenv('RENDER_EXTERNAL_URL','')).netloc,
+                      urlsplit(os.getenv('PUBLIC_BASE_URL','')).netloc}
+            if origin and urlsplit(origin).netloc not in expected:
+                return JSONResponse({'detail':'登录请求来源不匹配'},403)
         if request.url.path.startswith('/api'):
             size=int(request.headers.get('content-length','0')) if request.headers.get('content-length','0').isdigit() else 0
             if size>int(os.getenv('MAX_UPLOAD_BYTES','2097152'))+65536:
@@ -51,10 +72,23 @@ def create_app(platform=None):
     @app.exception_handler(ValueError)
     async def invalid(request,exc): return JSONResponse({'detail':str(exc)},422)
 
-    def session_id(x_session_id:str|None=Header(None)):
+    def current_token(request:Request):
+        value=request.headers.get('authorization','')
+        return value[7:] if value.lower().startswith('bearer ') else request.cookies.get(COOKIE,'')
+    def optional_user(request:Request):
+        token=current_token(request);user=auth.identify(token) if token else None
+        if token and not user: raise HTTPException(401,'登录已过期，请重新登录')
+        if auth.config.required and not user: raise HTTPException(401,'请先登录')
+        return user
+    def logged_user(request:Request):
+        user=auth.identify(current_token(request))
+        if not user: raise HTTPException(401,'请先登录')
+        return user
+    def session_id(request:Request,x_session_id:str|None=Header(None)):
         if not x_session_id or len(x_session_id)>100: raise HTTPException(401,'缺少会话，请刷新网页')
         try: platform.store.session(x_session_id)
         except KeyError: raise HTTPException(401,'会话已失效，请重新载入') from None
+        auth.authorize_workspace(x_session_id,optional_user(request))
         return x_session_id
     def admin(request:Request,x_admin_token:str|None=Header(None)):
         token=os.getenv('ADMIN_TOKEN','')
@@ -66,7 +100,34 @@ def create_app(platform=None):
     @app.get('/api/health')
     def health(): return {'status':'ok','algorithm':'Deep SARSA','llm_available':platform.llm.available,'version':'1.1.1'}
     @app.post('/api/session')
-    def new_session(): return platform.new_session()
+    def new_session(request:Request):
+        user=optional_user(request);value=platform.new_session()
+        if user: auth.bind(value['session_id'],user)
+        return value
+    @app.get('/api/auth/status')
+    def auth_status(): return auth.status()
+    @app.post('/api/auth/sms/request')
+    def sms_request(body:PhoneRequest,request:Request):
+        if not body.privacy_accepted or body.privacy_version!=PRIVACY_VERSION: raise HTTPException(422,'请先阅读并同意当前隐私说明')
+        return auth.request_code(body.phone,request.client.host if request.client else 'unknown')
+    @app.post('/api/auth/sms/verify')
+    def sms_verify(body:PhoneVerify,response:Response,request:Request):
+        if not body.privacy_accepted or body.privacy_version!=PRIVACY_VERSION: raise HTTPException(422,'请先阅读并同意当前隐私说明')
+        value=auth.verify(body.phone,body.challenge_id,body.code)
+        secure=request.url.scheme=='https' or bool(os.getenv('RENDER'))
+        response.set_cookie(COOKIE,value['access_token'],max_age=value['expires_in'],httponly=True,secure=secure,samesite='strict',path='/')
+        return value
+    @app.get('/api/auth/me')
+    def auth_me(user=Depends(logged_user)): return {'user':user,'session_id':auth.workspace(user)}
+    @app.post('/api/auth/logout')
+    def logout(request:Request,response:Response):
+        auth.logout(current_token(request));response.delete_cookie(COOKIE,path='/');return {'ok':True}
+    @app.delete('/api/auth/account')
+    def delete_account(response:Response,user=Depends(logged_user)):
+        auth.delete_user(user);response.delete_cookie(COOKIE,path='/');return {'ok':True}
+    @app.get('/api/wechat/code',dependencies=[Depends(admin)])
+    def mini_code():
+        content,kind=wechat.get();return Response(content,media_type=kind)
     @app.get('/api/company')
     def company(): return {**platform.company_profile,'records':platform.store.company_evidence()}
     @app.get('/api/access')

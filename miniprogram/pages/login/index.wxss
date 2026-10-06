@@ -1,0 +1,1 @@
+.login{padding:90rpx 50rpx 50rpx}.brand{font-size:35rpx;color:#d6b27b;margin-bottom:110rpx}.subtitle{color:#b4bea9;font-size:27rpx;margin:20rpx 0 55rpx}.code-row{display:flex;gap:16rpx;align-items:center}.code-row input{flex:1;min-width:0}.code-row button{white-space:nowrap;background:none;color:#d6b27b;font-size:24rpx;padding:14rpx 5rpx}.submit{margin-top:35rpx;width:100%}

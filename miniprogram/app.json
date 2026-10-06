@@ -1,0 +1,8 @@
+{
+  "pages": ["pages/home/index", "pages/login/index", "pages/privacy/index"],
+  "window": {"navigationBarTitleText": "深谋远虑", "navigationBarBackgroundColor": "#181d17", "navigationBarTextStyle": "white", "backgroundColor": "#181d17", "backgroundTextStyle": "light"},
+  "networkTimeout": {"request": 120000, "uploadFile": 120000},
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

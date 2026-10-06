@@ -1,0 +1,9 @@
+{
+  "description": "深谋远虑微信小程序客户端，复用现有营销决策后端",
+  "miniprogramRoot": "./",
+  "projectname": "shenmou-marketing",
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "setting": {"urlCheck": true, "es6": true, "enhance": true, "minified": true},
+  "condition": {}
+}

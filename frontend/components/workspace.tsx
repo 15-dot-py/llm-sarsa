@@ -5,6 +5,7 @@ import { ArrowRight, ArrowUpRight, Check, ChevronDown, Database, History, Layout
 import { api, post, downloadHistory } from '@/lib/api';
 import type { AccessInfo, CompanyProfile, Dashboard, Dataset, Decision, Lab, LibraryComponent, Num, PageId, RewardCatalog } from '@/lib/types';
 import { DataCenter, DecisionDetail, ExperimentView, FeedbackForm, HistoryView, Laboratory, LibraryView } from './platform';
+import AuthGate from './phone-login';
 
 type Drawer = 'data' | 'company' | 'model' | 'history' | 'share' | null;
 const SCENARIOS = [
@@ -20,6 +21,10 @@ function date(v:string){return new Date(v).toLocaleString('zh-CN',{month:'2-digi
 function legacyDrawer(page:PageId):Drawer{return page==='data'?'data':page==='history'?'history':['lab','library','experiments'].includes(page)?'model':null;}
 
 export default function Workspace({initialPage='dashboard'}:{initialPage?:PageId}){
+  return <AuthGate><WorkspaceBody initialPage={initialPage}/></AuthGate>;
+}
+
+function WorkspaceBody({initialPage='dashboard'}:{initialPage?:PageId}){
   const [dashboard,setDashboard]=useState<Dashboard|null>(null),[company,setCompany]=useState<CompanyProfile|null>(null),[access,setAccess]=useState<AccessInfo|null>(null);
   const [data,setData]=useState<Dataset|null>(null),[lab,setLab]=useState<Lab|null>(null),[library,setLibrary]=useState<LibraryComponent[]>([]),[history,setHistory]=useState<Decision[]>([]);
   const [record,setRecord]=useState<Decision|null>(null),[drawer,setDrawer]=useState<Drawer>(legacyDrawer(initialPage)),[modelTab,setModelTab]=useState('decision');

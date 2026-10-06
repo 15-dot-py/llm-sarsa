@@ -1,0 +1,6 @@
+<view class="login"><image class="brand-logo" src="/assets/brand-logo.png" mode="aspectFill"/><view class="title">登录营销工作台</view><view class="subtitle">验证手机号，保存自己的数据和决策记录。</view>
+<view class="label">手机号</view><input type="number" maxlength="11" value="{{phone}}" bindinput="phoneInput" placeholder="中国大陆手机号"/>
+<view class="label">短信验证码</view><view class="code-row"><input type="number" maxlength="6" value="{{code}}" bindinput="codeInput" placeholder="6 位验证码"/><button bindtap="send" disabled="{{busy || remaining > 0 || !accepted || !phoneValid || !ready}}">{{remaining > 0 ? remaining + ' 秒后重试' : '获取验证码'}}</button></view>
+<checkbox-group bindchange="consent"><view class="check"><checkbox value="accepted" checked="{{accepted}}" color="#d6b27b"/><text>我已阅读并同意</text><text class="privacy-link" catchtap="privacy">隐私说明</text></view></checkbox-group>
+<view wx:if="{{message}}" class="notice">{{message}}</view><view wx:if="{{error}}" class="error">{{error}}</view>
+<button class="submit" bindtap="login" loading="{{busy}}" disabled="{{busy || !ready || !accepted || !codeValid || !challenge}}">登录</button><view class="fine">验证码 5 分钟内有效，只用于登录验证。</view></view>

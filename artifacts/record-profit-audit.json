@@ -1,0 +1,23 @@
+{
+  "source": "local synthetic accounting regression; not company performance",
+  "baseline": {
+    "revenue": 15028.2,
+    "cogs": 8613.0,
+    "advertising_budget": 9476.92,
+    "promotion_cost": 150.29,
+    "return_loss": 212.52,
+    "profit": -3424.5299999999993,
+    "roi": -0.3557136491257591
+  },
+  "positive_control": {
+    "revenue": 15028.2,
+    "cogs": 8613.0,
+    "advertising_budget": 1421.538,
+    "promotion_cost": 15.029,
+    "return_loss": 212.52,
+    "profit": 4766.112999999999,
+    "roi": 3.317710207738309
+  },
+  "baseline_reward": 0.06333862,
+  "positive_control_reward": 0.38665089
+}

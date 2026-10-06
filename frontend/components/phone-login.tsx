@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useState} from 'react';
 import {Phone,ArrowRight} from 'lucide-react';
+import {clearDeviceArchives} from '@/lib/recovery';
 
 interface Status {login_required:boolean;sms_ready:boolean;privacy_version:string;message:string;}
 async function call(path:string,body?:unknown,method='POST') {
@@ -41,7 +42,7 @@ export default function AuthGate({children,forceLogin=false}:{children?:React.Re
     else if(r.status!==401)throw new Error('无法读取登录状态');
     if(live){setStatus(s);setChecked(true);}
   }catch(e){if(live)setError(e instanceof Error?e.message:'无法连接服务');}})();return()=>{live=false;};},[]);
-  async function logout(){try{await call('/logout');localStorage.removeItem('shenmou-session-v1');window.location.reload();}catch(e){setError(e instanceof Error?e.message:'退出失败');}}
+  async function logout(){try{await call('/logout');await clearDeviceArchives();localStorage.removeItem('shenmou-session-v1');window.location.reload();}catch(e){setError(e instanceof Error?e.message:'退出失败');}}
   if(error)return <main className="phone-page"><p role="alert">{error}</p><button onClick={()=>window.location.reload()}>重新连接</button></main>;
   if(!checked||!status)return <main className="phone-page"><p>正在连接工作台…</p></main>;
   if(forceLogin||status.login_required&&!user)return <PhoneLogin status={status}/>;

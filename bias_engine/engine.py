@@ -3,6 +3,19 @@ import numpy as np
 LABELS={'sunk_cost_score':'沉没成本风险','herding_score':'从众风险','loss_aversion_score':'损失厌恶风险',
         'overconfidence_score':'过度自信风险','recency_bias_score':'近期偏差风险','anchoring_score':'锚定风险'}
 
+def missing_requirement(key, history):
+    if key=='overconfidence_score':
+        count=sum(x.get('forecast_revenue') is not None and x.get('revenue',0)>0 for x in history)
+        return f'已完成收入预测与结果配对 {count}/3 轮。请在执行依据填写收入预测，并提交经营反馈。'
+    if key=='herding_score':
+        return '尚无“跟随竞品动作”的已反馈样本。采纳模型建议的执行确认仍计入决策记录。'
+    if key=='anchoring_score':
+        return '尚无“参照历史价格或预算”的已反馈样本。可在执行依据记录参照值和证据冲突。'
+    if key=='recency_bias_score':
+        count=sum(x.get('advertising_budget') is not None and x.get('revenue') is not None for x in history[-14:])
+        return f'预算与收入配对 {count}/7 个观察日，需补充经营数据。'
+    return f'当前 {len(history)}/3 个观察日，需补充经营数据。'
+
 class BiasEngine:
     def analyze(self,history):
         results=[]; n=len(history)
@@ -41,7 +54,7 @@ class BiasEngine:
             if n>=7 and key=='recency_bias_score':
                 usable=[x for x in history[-14:] if x.get('advertising_budget') is not None and x.get('revenue') is not None]
                 if len(usable)<7:
-                    results.append({'name':key,'label':label,'score':None,'evidence':[],'status':'evidence_insufficient','interpretation':'预算记录不足'})
+                    results.append({'name':key,'label':label,'score':None,'evidence':[],'status':'evidence_insufficient','interpretation':missing_requirement(key,history)})
                     continue
                 budgets=np.array([x['advertising_budget'] for x in usable]); rev=np.array([x['revenue'] for x in usable])
                 shifts=np.diff(budgets)/np.maximum(budgets[:-1],1); noise=np.std(rev)/max(np.mean(rev),1)
@@ -60,5 +73,5 @@ class BiasEngine:
                     evidence=[{'date':x.get('date'),'anchor':x.get('anchor_value'),'conflict':bool(x.get('current_evidence_conflict'))} for x in usable]
             results.append({'name':key,'label':label,'score':score,'evidence':evidence,
                             'status':'evidence_insufficient' if score is None else 'computed',
-                            'interpretation':'可核查的操作风险信号，不能据此诊断人员心理'})
+                            'interpretation':missing_requirement(key,history) if score is None else '可核查的操作风险信号，不能据此诊断人员心理'})
         return results

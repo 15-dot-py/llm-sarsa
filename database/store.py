@@ -49,9 +49,10 @@ class Store:
     def put_decision(self,sid,record,c):
         c.execute('INSERT INTO decisions(id,session_id,created,status,record) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,record=excluded.record',
                   (record['id'],sid,record['timestamp'],record['status'],dumps(record)))
-    def history(self,sid):
+    def history(self,sid,limit=200):
         with self.connect() as c:
-            rows=c.execute('SELECT record FROM decisions WHERE session_id=? ORDER BY created DESC LIMIT 200',(sid,)).fetchall()
+            sql='SELECT record FROM decisions WHERE session_id=? ORDER BY created DESC'
+            rows=c.execute(sql+' LIMIT ?',(sid,limit)).fetchall() if limit is not None else c.execute(sql,(sid,)).fetchall()
             return [json.loads(x[0]) for x in rows]
     def get_metadata(self,key):
         with self.connect() as c:

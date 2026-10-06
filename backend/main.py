@@ -19,6 +19,7 @@ from backend.access import access_info
 from reward.catalog import reward_catalog
 from backend.phone_auth import PhoneAuth, COOKIE, PRIVACY_VERSION
 from backend.wechat_code import WechatCode
+from backend.workspace_backup import WorkspaceBackup, MAX_PACKED
 
 class PhoneRequest(BaseModel):
     model_config=ConfigDict(extra='forbid')
@@ -30,11 +31,19 @@ class PhoneVerify(PhoneRequest):
     challenge_id: str=Field(min_length=40,max_length=60,pattern=r'^[A-Za-z0-9_-]+$')
     code: str=Field(pattern=r'^\d{6}$')
 
+class RecoveryArchive(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    version: int=Field(ge=1,le=1)
+    session_id: str=Field(min_length=40,max_length=60,pattern=r'^[A-Za-z0-9_-]+$')
+    updated: str=Field(max_length=80)
+    payload: str=Field(max_length=MAX_PACKED,pattern=r'^[A-Za-z0-9+/=]+$')
+    signature: str=Field(pattern=r'^[a-f0-9]{64}$')
+
 def create_app(platform=None,auth=None):
     platform=platform or Platform()
     app=FastAPI(title='深谋远虑 · 营销决策平台',version='1.1.1',docs_url='/api/docs')
     app.state.platform=platform
-    auth=auth or PhoneAuth(platform);app.state.auth=auth;wechat=WechatCode()
+    auth=auth or PhoneAuth(platform);app.state.auth=auth;wechat=WechatCode();backup=WorkspaceBackup(platform,auth)
     buckets=defaultdict(deque); rate_lock=threading.Lock()
     @app.middleware('http')
     async def harden(request:Request,call_next):
@@ -85,10 +94,11 @@ def create_app(platform=None,auth=None):
         if not user: raise HTTPException(401,'请先登录')
         return user
     def session_id(request:Request,x_session_id:str|None=Header(None)):
+        user=optional_user(request)
         if not x_session_id or len(x_session_id)>100: raise HTTPException(401,'缺少会话，请刷新网页')
         try: platform.store.session(x_session_id)
-        except KeyError: raise HTTPException(401,'会话已失效，请重新载入') from None
-        auth.authorize_workspace(x_session_id,optional_user(request))
+        except KeyError: raise HTTPException(401,{'code':'workspace_expired','message':'服务端工作区已失效，正在尝试恢复本浏览器备份'}) from None
+        auth.authorize_workspace(x_session_id,user)
         return x_session_id
     def admin(request:Request,x_admin_token:str|None=Header(None)):
         token=os.getenv('ADMIN_TOKEN','')
@@ -104,6 +114,11 @@ def create_app(platform=None,auth=None):
         user=optional_user(request);value=platform.new_session()
         if user: auth.bind(value['session_id'],user)
         return value
+    @app.get('/api/workspace/backup')
+    def workspace_backup(sid=Depends(session_id)): return backup.export(sid)
+    @app.post('/api/workspace/restore')
+    def workspace_restore(body:RecoveryArchive,request:Request):
+        return backup.restore(body.model_dump(),optional_user(request))
     @app.get('/api/auth/status')
     def auth_status(): return auth.status()
     @app.post('/api/auth/sms/request')
@@ -165,7 +180,7 @@ def create_app(platform=None,auth=None):
     def finish(did:str,sid=Depends(session_id)): return platform.finish_cycle(sid,did)
     @app.get('/api/export/history.json')
     def export(sid=Depends(session_id)):
-        return Response(dumps({'decisions':platform.store.history(sid),'data_label':platform.store.session(sid)['dataset']['quality']}),
+        return Response(dumps({'decisions':platform.store.history(sid,limit=None),'data_label':platform.store.session(sid)['dataset']['quality']}),
                         media_type='application/json',headers={'Content-Disposition':'attachment; filename="decision-history.json"'})
     @app.get('/api/library')
     def library(sid=Depends(session_id)): return create_library().run(platform.store.session(sid)['metrics'])

@@ -2,6 +2,7 @@ export type Num = number | null;
 export type PageId = 'dashboard' | 'decision' | 'lab' | 'data' | 'library' | 'history' | 'experiments';
 export interface Channel { channel: string; revenue: number; advertising_cost: number; profit: number; roi: Num; cac: Num; inventory: number; conversion_rate: number; }
 export interface Metrics {
+  cogs?: Num; return_loss?: Num;
   date: string; revenue: number; sales: Num; profit: number; roi: Num; roas?: Num; cac: Num;
   conversion_rate: Num; repeat_purchase_rate: Num; inventory_pressure: Num; inventory_level: number;
   profit_margin: Num; advertising_budget: Num; inventory_turnover: Num; gmv_growth: Num;
@@ -22,7 +23,10 @@ export interface RewardCatalog {
   profiles: (Profile & {raw_weights:Record<string,number>})[];
 }
 export interface LLMStatus { available: boolean; configured?: boolean; last_error?: string | null; last_success_at?: string | null; last_used_model?: string | null; free_only?: boolean; mode: string; model: string; calls_today: number; daily_limit: number; }
-export interface Dashboard { metrics: Metrics; series: Metrics[]; quality: Quality; state: State; bias: Bias[]; llm: LLMStatus; training_status: string; model_version: string; active_decision: Decision | null; profiles: Profile[]; }
+export interface Dashboard { metrics: Metrics; series: Metrics[]; quality: Quality; state: State; bias: Bias[]; llm: LLMStatus; training_status: string; model_version: string; active_decision: Decision | null; profiles: Profile[];
+  operations:{decisions:number;confirmed:number;accepted:number;overrides:number;actual_feedback:number;simulation_feedback:number;last_confirmation:string|null};
+  comparison:{source:string;before_profit:Num;after_profit:Num;profit_change:Num;before_roi:Num;after_roi:Num;reward:Num}|null;
+}
 export interface Importance { name: string; label: string; permutation_mean: number; permutation_std: number; spearman: Num; q_sensitivity: Num; present: boolean; }
 export interface FactorAnalysis { importance: Importance[]; method: string; target: string; warning: string; status: string; train_n?: number; test_n?: number; test_mse?: number; }
 export interface QValue { index: number; name: string; label: string; q: number; legal: boolean; reasons: string[]; }
@@ -32,6 +36,7 @@ export interface Update { loss: number; q_before: number; target: number; bootst
 export interface Transition { state: number[]; action: number; reward: number; next_state: number[]; next_action: number | null; next_action_name?: string; next_action_confirmed: boolean; source: string; terminal: boolean; update?: Update; model_version_after?: string; }
 export interface Explanation { selected_action: string; source: string; model?: string | null; provider?: string; summary: string; reasons: string[]; watch_metrics: string[]; limitations: string[]; fallback_reason: string | null; }
 export interface Decision {
+  stability_audit?:{selection:string;q_gap:Num;alternative_action:string|null;semantic_reused:boolean;previous_model_version:string|null;note:string};
   input_audit?: {used_signals:{name:string;description:string;value:Num}[];business_claims:Record<string,string>;data_source:string;note:string;goal_source?:string;explicit_constraints?:string[]};
   company_evidence?: CompanyEvidence[];
   id: string; timestamp: string; status: string; question: string; model_version: string;

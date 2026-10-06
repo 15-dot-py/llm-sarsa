@@ -86,8 +86,27 @@ class Platform:
         s=self._session(sid); dataset=s['dataset']; metrics=s['metrics']; h=dataset['daily']
         bias=self.bias.analyze(h); bias_values={x['name']:x['score'] for x in bias}
         state=self._engine_for(self._agent(s)).build(metrics,PROFILES['balanced_growth'],bias=bias_values)
+        records=self.store.history(sid,limit=None)
+        confirmed=[r for r in records if r.get('execution')]
+        feedback=[r for r in records if r.get('user_feedback')]
+        latest=next((r for r in records if r['id']==dataset['quality'].get('latest_feedback_decision_id')),None)
+        comparison=None
+        if latest and latest.get('outcome_metrics'):
+            before=latest['metrics']; after=latest['outcome_metrics']
+            comparison={'source':latest['user_feedback']['provenance']['label'],
+                        'before_profit':before.get('profit'),'after_profit':after.get('profit'),
+                        'profit_change':after['profit']-before['profit'],
+                        'before_roi':before.get('roi'),'after_roi':after.get('roi'),
+                        'reward':latest['actual_reward']['total']}
+        operations={'decisions':len(records),'confirmed':len(confirmed),
+                    'accepted':sum(not r['execution']['override'] for r in confirmed),
+                    'overrides':sum(bool(r['execution']['override']) for r in confirmed),
+                    'actual_feedback':sum(r['user_feedback']['mode']=='actual' for r in feedback),
+                    'simulation_feedback':sum(r['user_feedback']['mode']=='simulation' for r in feedback),
+                    'last_confirmation':max((r['execution']['timestamp'] for r in confirmed),default=None)}
         return {'metrics':metrics,'series':[{k:x.get(k) for k in ['date','revenue','profit','roi','cac','inventory_level','advertising_budget','conversion_rate','repeat_purchase_rate']} for x in h],
                 'quality':dataset['quality'],'state':state,'bias':bias,'llm':self.llm.status(),
+                'operations':operations,'comparison':comparison,
                 'training_status':s['config']['training_status'],'model_version':self.version(s),
                 'active_decision':self.store.decision(sid,s['active_decision']) if s['active_decision'] else None,
                 'profiles':[{'name':k,'label':PROFILE_LABELS[k],**v.to_dict()} for k,v in PROFILES.items()]}
@@ -108,7 +127,10 @@ class Platform:
     def _build_decision(self,s,question,profile,constraints,parent=None,agent=None):
         agent=agent or self._agent(s)
         company_evidence=self.store.retrieve_company_evidence(question)
-        semantic=self.llm.extract(question,company_evidence=company_evidence)
+        # A feedback cycle continues the original business question. Reuse its
+        # audited signals instead of asking the LLM to reinterpret it each day.
+        previous=self.store.decision(s['id'],parent) if parent else None
+        semantic=json.loads(dumps(previous['semantic'])) if previous and previous['question']==question else self.llm.extract(question,company_evidence=company_evidence)
         history=s['dataset']['daily']; bias=self.bias.analyze(history)
         state=self._engine_for(agent).build(s['metrics'],profile,semantic['signals'],{x['name']:x['score'] for x in bias})
         used=[{'name':f['name'],'description':f['description'],'value':f['raw']} for f in state['factors']
@@ -120,6 +142,13 @@ class Platform:
         context=context_from_metrics(s['metrics']); mask,reasons=action_mask(context,constraints)
         if not mask.any(): raise BusinessError('当前数据下没有能同时满足预算与毛利限制的离散动作。请核对业务上限，或先人工调整现有预算与价格。')
         action=agent.select_action(state['vector'],mask,explore=False); q=agent.q_values(state['vector'])
+        ranked=sorted((float(q[i]),i) for i in np.flatnonzero(mask))
+        stability={'selection':'固定模型和状态下取合法动作的最高 Q 值，展示决策不使用 epsilon 随机探索',
+                   'q_gap':ranked[-1][0]-ranked[-2][0] if len(ranked)>1 else None,
+                   'alternative_action':ACTIONS[ranked[-2][1]].label if len(ranked)>1 else None,
+                   'semantic_reused':bool(previous and previous['question']==question),
+                   'previous_model_version':previous['model_version'] if previous else None,
+                   'note':'Q 差距较小时排名容易因状态或在线更新变化；Q 差距不是置信度或利润差。'}
         importance=evaluate_factors(history,agent)
         record={'id':str(uuid.uuid4()),'timestamp':now(),'status':'draft','question':question,
                 'model_version':self.version(s,agent),'state_vector':state['vector'],'factor_values':state['factors'],
@@ -134,6 +163,7 @@ class Platform:
                 'semantic':semantic,'input_audit':input_audit,'company_evidence':company_evidence,'bias':bias,'mask_reasons':reasons,'constraints':asdict(constraints),
                 'context':context,'metrics':s['metrics'],'parent_decision':parent,
                 'training_data_source':'合成环境预训练' if agent.updates else '未训练，建议先在实验室训练',
+                'stability_audit':stability,
                 'execution':None,'transition':None}
         record['explanation']=self.llm.explain(record)
         record['explanation_source']=record['explanation']['source']
@@ -200,10 +230,17 @@ class Platform:
     def _outcome(self,record,request):
         actual_action=record['execution']['action']; profile=profile_from_record(record)
         if request.mode=='simulation':
-            seed=int(hashlib.sha256(record['id'].encode()).hexdigest()[:8],16)%100000
+            # Common random innovations for the same observed day and metrics;
+            # an unrelated UUID must not change the simulated market outcome.
+            keys=['date','revenue','advertising_budget','promotion_cost','inventory_level',
+                  'list_price','price_level','unit_cost','conversion_rate','repeat_purchase_rate','budgets']
+            basis=json.dumps({k:record['metrics'].get(k) for k in keys},sort_keys=True,allow_nan=False)
+            seed=int(hashlib.sha256(('state-seed-v1:'+basis).encode()).hexdigest()[:8],16)%100000
             env=MarketingEnvironment(seed=seed,profile=profile,calibration=record['metrics'],constraints=ActionConstraints(**record['constraints']))
             _,_,_,info=env.step(actual_action)
-            return info['metrics'],{'source':'simulation','seed':seed,'label':'合成环境执行结果，不是企业实际业绩'}
+            return info['metrics'],{'source':'simulation','seed':seed,'seed_method':'observed-state-v1',
+                                   'label':'合成环境执行结果，不是企业实际业绩',
+                                   'boundary':'同一观察日与经营数据共用随机情景；环境仍含随机扰动，并非企业效果预测'}
         if request.outcome is None: raise BusinessError('实际反馈需要填写经营结果')
         o=request.outcome.model_dump(); prev=record['metrics']; context=apply_action(record['context'],actual_action)
         m={k:None for k in [f.name for f in self.factors.registry.factors]}
@@ -242,6 +279,8 @@ class Platform:
                        'provenance':provenance,'timestamp':now(),'request':request.model_dump()}
             dataset=s['dataset']; dataset['daily'].append(metrics); dataset['current']=metrics
             dataset['quality']['latest_result_source']=provenance['label']
+            dataset['quality']['latest_feedback_decision_id']=did
+            record['outcome_metrics']=metrics
             s['metrics']=metrics; s['dataset']=dataset
             agent=self._agent(s)
             state=self._engine_for(agent).build(metrics,profile,bias={x['name']:x['score'] for x in self.bias.analyze(dataset['daily'])})

@@ -14,6 +14,7 @@ def metrics_from_rows(rows, previous_revenue=None):
     customers=sums['new_customers']+sums['returning_customers']
     inv=sums['inventory']; initial=inv+sales
     m={'revenue':rev,'sales':sales,'profit':profit,'advertising_budget':ads,'promotion_cost':promo,
+       'cogs':sums['cogs'],'return_loss':sums['return_loss'],
        'ctr':sums['clicks']/sums['impressions'] if sums['impressions']>0 else None,
        'conversion_rate':sums['orders']/sums['clicks'] if sums['clicks']>0 else None,
        'cac':ads/sums['new_customers'] if sums['new_customers']>0 else None,
